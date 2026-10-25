@@ -37,8 +37,10 @@ jobs:
           gradle-version: "8.13"
       - name: Test and assemble debug APK
         run: gradle :core:test :app:assembleDebug --no-daemon --stacktrace
-      # Private draft release, not a production publish. Avoids Actions artifact storage quota.
-      - name: Save APK to a private QA draft
+      # A published prerelease remains private because the repository is private.
+      # A draft is not a reliable mobile download channel, even when an asset is uploaded.
+      # Avoid Actions artifacts while this account's artifact storage quota is exhausted.
+      - name: Provide APK as private-repository QA prerelease
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/feat/')
         env:
           GH_TOKEN: ${{ github.token }}
@@ -47,7 +49,11 @@ jobs:
           TAG="qa-${GITHUB_SHA:0:12}"
           FILE="app/build/outputs/apk/debug/app-debug.apk"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$FILE" --clobber
+            # Reruns must not overwrite existing assets, including immutable releases.
+            if ! gh release view "$TAG" --json assets --jq '.assets[].name' | grep -Fxq 'app-debug.apk'; then
+              gh release upload "$TAG" "$FILE"
+            fi
           else
-            gh release create "$TAG" "$FILE" --draft --prerelease --target "$GITHUB_SHA" --title "Open Music private QA $TAG" --notes "QA debug APK, not a public/production release."
+            gh release create "$TAG" "$FILE" --prerelease --target "$GITHUB_SHA" --title "Open Music private-repository QA $TAG" --notes "Android debug APK for device QA in a private repository. Not a Play Store or production release."
           fi
+          gh release view "$TAG" --json url,isDraft,isPrerelease,assets --jq '{url, isDraft, isPrerelease, assetNames: [.assets[].name]}'

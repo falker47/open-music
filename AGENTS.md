@@ -14,7 +14,7 @@ CI uses Gradle 8.13, JDK 17, Android API 36 and runs:
 gradle :core:test :app:assembleDebug --no-daemon --stacktrace
 ~~~
 
-Check core tests and the private draft QA release APK asset against the exact pushed commit; GitHub Actions artifact quota is exhausted. Device testing is a separate gate.
+Check core tests and the downloadable QA prerelease APK asset in the private repository against the exact pushed commit; GitHub Actions artifact quota is exhausted. The prerelease is not a Play Store or production release, and repository visibility must remain private. Device testing is a separate gate.
 
 Source boundaries:
 - core/src/main/kotlin: pure matching engine and portable models.
