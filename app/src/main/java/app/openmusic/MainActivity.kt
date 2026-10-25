@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -71,6 +72,7 @@ private fun OpenMusicApp() {
     var search by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf("") }
     var createDialog by remember { mutableStateOf(false) }
+    var pendingAdd by remember { mutableStateOf<AudioFile?>(null) }
     var proposedName by remember { mutableStateOf("") }
     var exportPending by remember { mutableStateOf<PortablePlaylist?>(null) }
     var nowTitle by remember { mutableStateOf("") }
@@ -143,12 +145,7 @@ private fun OpenMusicApp() {
         player.play()
     }
 
-    fun addToPlaylist(file: AudioFile) {
-        val listId = selectedId
-        if (listId == null) {
-            notifyUser("Crea prima una playlist nella scheda Playlist")
-            return
-        }
+    fun addToPlaylist(file: AudioFile, listId: String) {
         if (busy.isNotEmpty()) return
         scope.launch {
             busy = "Identificazione SHA-256 del brano"
@@ -162,6 +159,7 @@ private fun OpenMusicApp() {
                     tracks = list.tracks + PlaylistEntry(UUID.randomUUID().toString(), identity),
                 )
                 persist(playlists.map { if (it.playlistId == listId) next else it })
+                selectedId = listId
                 localCopies = localCopies.map {
                     if (it.uri == file.uri) file.asCopy(hash) else it
                 }
@@ -171,6 +169,16 @@ private fun OpenMusicApp() {
             } finally {
                 busy = ""
             }
+        }
+    }
+
+    fun requestAddToPlaylist(file: AudioFile) {
+        if (busy.isNotEmpty()) return
+        when (val destination = PlaylistRouting.decide(playlists)) {
+            PlaylistDestination.CreateFirst ->
+                notifyUser("Crea prima una playlist nella scheda Playlist")
+            is PlaylistDestination.Direct -> addToPlaylist(file, destination.playlistId)
+            PlaylistDestination.Choose -> pendingAdd = file
         }
     }
 
@@ -329,6 +337,39 @@ private fun OpenMusicApp() {
         )
     }
 
+    pendingAdd?.let { file ->
+        AlertDialog(
+            onDismissRequest = { pendingAdd = null },
+            title = { Text("Scegli la playlist") },
+            text = {
+                Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
+                    Text("Aggiungi «" + file.title + "» a:", color = Muted,
+                        style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.height(8.dp))
+                    playlists.forEach { list ->
+                        TextButton(
+                            onClick = {
+                                pendingAdd = null
+                                addToPlaylist(file, list.playlistId)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(Modifier.fillMaxWidth()) {
+                                Text(list.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(list.tracks.size.toString() + " brani", color = Muted,
+                                    style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { pendingAdd = null }) { Text("Annulla") }
+            },
+        )
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         containerColor = Background,
@@ -397,7 +438,7 @@ private fun OpenMusicApp() {
                             AudioRow(
                                 file = file,
                                 onPlay = { playQueue(filtered, filtered.indexOf(file)) },
-                                onAdd = { addToPlaylist(file) },
+                                onAdd = { requestAddToPlaylist(file) },
                             )
                             HorizontalDivider(color = Color.White.copy(alpha = 0.06f))
                         }
