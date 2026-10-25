@@ -4,7 +4,7 @@
 
 ## Local device
 
-Android MediaStore -> AudioFile (content URI + tags) -> Media3 player, after a runtime audio permission is granted.
+Android MediaStore -> AudioFile (content URI + tags) -> Media3 ExoPlayer in PlaybackService, after a runtime audio permission is granted. The Compose activity holds only a MediaController linked to a MediaSessionService; closing the activity no longer releases the playback engine. The media foreground-service permissions are declared for playback. Media3 supplies system notification/lock-screen controls from MediaItem metadata. Screen-off/background behavior requires device QA; reboot/process-death resumption is not implemented.
 
 Adding a file to a playlist computes a streaming SHA-256 hash in a worker coroutine. The portable JSON contains stable entry IDs, hash, metadata and optional filename hint. Its source URI is never serialized. Copies with the same exact hash may be linked after files change name or folder.
 
@@ -26,5 +26,5 @@ Separate logical song identity from local and remote copies. Prefer an available
 
 1. Pure matcher test: 50 source entries, 40 identical destination files renamed/moved, 10 missing, zero mistaken links.
 2. GitHub Actions at candidate commit: core tests pass, Android debug APK assembles; the downloadable private-repository QA prerelease asset is available on a feature-branch build, and its download is checked by the tester.
-3. Android device QA: permissions, scan, search, playback, seek, playlist save/restart, import/export, relink, no audio writes.
+3. Android device QA: permissions, scan, search, playback, seek, playlist save/restart, import/export, relink, no audio writes. Verify playback continuity after Home, screen lock and activity recreation, media notification play/pause/next/previous, Bluetooth media buttons and audio-focus/noisy-headset behavior; do not mark these PASS from a CI build alone.
 4. Metadata sync QA: provider login, offline edits, concurrent changes, cross-device resume and conflict recovery.

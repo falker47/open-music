@@ -7,7 +7,7 @@ Android-first, local-first music player with portable playlists independent of f
 ## What works in the first Android QA build
 
 - Browse and search local audio indexed by Android MediaStore.
-- Play locally accessible tracks with Media3 ExoPlayer (play/pause/next/previous/seek).
+- Play locally accessible tracks with Media3 ExoPlayer (play/pause/next/previous/seek); a MediaSessionService now owns playback so it can continue with the screen locked or another app in front (pending real-device QA).
 - Create multiple local playlists, add/remove entries and preserve order and repetitions.
 - Export/import portable JSON playlist v1 using the Android system document picker.
   - The picker may show Google Drive or pCloud if they expose a compatible DocumentsProvider. **This is manual export/import, not automatic cloud sync.**
@@ -17,8 +17,8 @@ Android-first, local-first music player with portable playlists independent of f
 
 ## Current limitations
 
-- No direct cloud streaming, OAuth, automatic synchronization, Windows client or background media service yet.
-- Player is foreground-only; exiting the activity stops playback. No lock-screen audio controls yet.
+- No direct cloud streaming, OAuth, automatic synchronization or Windows client yet.
+- Media3 notification, lock-screen and headset controls are included in the new background-playback QA build but **not yet device-verified**. Reboot/process-death playback resumption and Android Auto browsing are not implemented.
 - Only audio present in MediaStore can be scanned; arbitrary downloaded document locations may be omitted.
 - Relink reads every local audio file to calculate exact hashes. Start with **5–20 small local files**, not an entire virtual pCloud drive.
 - Real-device QA and provider QA are still required; JVM tests and CI compilation do not prove on-device behavior.
@@ -88,7 +88,7 @@ Portable JSON contains **no Android content URIs, absolute paths, credentials, O
 
 1. Run device QA with 5–20 real local MP3/FLAC files and verify permissions, playback, restart, import/export and relink.
 2. Add optional metadata-only cloud synchronization, provider permissions, revision checks and conflict handling.
-3. Add foreground audio service, Android Auto support and user-controlled cache.
+3. Verify the new foreground media session service (background/lock-screen/headset); Android Auto library browsing and user-controlled cache are later steps.
 4. Add direct pCloud/Google Drive playback and eventually a Windows client.
 
 The existing personal project **our-soundtrack** is intentionally separate and remains untouched.

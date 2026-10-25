@@ -1,11 +1,13 @@
 package app.openmusic
 
+import android.content.ComponentName
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,7 +28,8 @@ import androidx.compose.ui.unit.dp
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
 import app.openmusic.core.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -63,7 +66,8 @@ private fun OpenMusicApp() {
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     val storage = remember { PlaylistStorage(context.applicationContext) }
-    val player = remember { ExoPlayer.Builder(context).build() }
+    // The playback engine lives in PlaybackService; this UI only holds a controller.
+    var player by remember { mutableStateOf<MediaController?>(null) }
     var audioFiles by remember { mutableStateOf(emptyList<AudioFile>()) }
     var localCopies by remember { mutableStateOf(emptyList<LocalCopy>()) }
     var playlists by remember { mutableStateOf(emptyList<PortablePlaylist>()) }
@@ -130,6 +134,11 @@ private fun OpenMusicApp() {
 
     fun playQueue(queue: List<AudioFile>, index: Int) {
         if (queue.isEmpty() || index !in queue.indices) return
+        val controller = player
+        if (controller == null) {
+            notifyUser("Player in connessione: riprova fra un momento")
+            return
+        }
         val items = queue.map { file ->
             MediaItem.Builder()
                 .setUri(Uri.parse(file.uri))
@@ -140,9 +149,9 @@ private fun OpenMusicApp() {
                     .build())
                 .build()
         }
-        player.setMediaItems(items, index, 0L)
-        player.prepare()
-        player.play()
+        controller.setMediaItems(items, index, 0L)
+        controller.prepare()
+        controller.play()
     }
 
     fun addToPlaylist(file: AudioFile, listId: String) {
@@ -302,26 +311,63 @@ private fun OpenMusicApp() {
         if (MediaLibrary.hasPermission(context)) scan()
     }
 
-    DisposableEffect(player) {
-        val listener = object : Player.Listener {
-            override fun onEvents(player: Player, events: Player.Events) {
-                nowTitle = player.currentMediaItem?.mediaMetadata?.title?.toString().orEmpty()
-                nowArtist = player.currentMediaItem?.mediaMetadata?.artist?.toString().orEmpty()
-                playing = player.isPlaying
+    // Connect asynchronously. Releasing the UI controller must not release service playback.
+    DisposableEffect(context) {
+        val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
+        val future = MediaController.Builder(context, token).buildAsync()
+        var disposed = false
+        future.addListener({
+            if (!disposed) {
+                try {
+                    player = future.get()
+                } catch (failure: Exception) {
+                    scope.launch {
+                        snackbar.showSnackbar("Player non disponibile: " +
+                            (failure.localizedMessage ?: "errore di connessione"))
+                    }
+                }
             }
-        }
-        player.addListener(listener)
+        }, ContextCompat.getMainExecutor(context))
         onDispose {
-            player.removeListener(listener)
-            player.release()
+            disposed = true
+            player = null
+            MediaController.releaseFuture(future)
+        }
+    }
+
+    DisposableEffect(player) {
+        val active = player
+        if (active == null) {
+            onDispose { }
+        } else {
+            fun updateNowPlaying() {
+                nowTitle = active.currentMediaItem?.mediaMetadata?.title?.toString().orEmpty()
+                nowArtist = active.currentMediaItem?.mediaMetadata?.artist?.toString().orEmpty()
+                playing = active.isPlaying
+            }
+            val listener = object : Player.Listener {
+                override fun onEvents(player: Player, events: Player.Events) {
+                    updateNowPlaying()
+                }
+            }
+            active.addListener(listener)
+            // An activity recreated while audio continues must show the existing session.
+            updateNowPlaying()
+            onDispose { active.removeListener(listener) }
         }
     }
 
     LaunchedEffect(player) {
-        while (true) {
-            position = player.currentPosition.coerceAtLeast(0L)
-            duration = player.duration.coerceAtLeast(0L)
-            delay(750)
+        val active = player
+        if (active != null) {
+            while (true) {
+                position = active.currentPosition.coerceAtLeast(0L)
+                duration = active.duration.coerceAtLeast(0L)
+                delay(750)
+            }
+        } else {
+            position = 0L
+            duration = 0L
         }
     }
 
@@ -386,11 +432,11 @@ private fun OpenMusicApp() {
                     title = nowTitle, artist = nowArtist, playing = playing,
                     progress = if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f,
                     onSeek = { fraction ->
-                        if (duration > 0) player.seekTo((fraction * duration).toLong())
+                        player?.let { if (duration > 0L) it.seekTo((fraction * duration).toLong()) }
                     },
-                    onBack = { if (player.hasPreviousMediaItem()) player.seekToPreviousMediaItem() },
-                    onPlayPause = { if (player.isPlaying) player.pause() else player.play() },
-                    onNext = { if (player.hasNextMediaItem()) player.seekToNextMediaItem() },
+                    onBack = { player?.let { if (it.hasPreviousMediaItem()) it.seekToPreviousMediaItem() } },
+                    onPlayPause = { player?.let { if (it.isPlaying) it.pause() else it.play() } },
+                    onNext = { player?.let { if (it.hasNextMediaItem()) it.seekToNextMediaItem() } },
                 )
             }
         },
