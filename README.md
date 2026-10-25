@@ -34,7 +34,7 @@ Android-first, local-first music player with portable playlists independent of f
 
 ## Getting the first APK
 
-When [Android build and core tests](../../actions/workflows/android.yml) finishes successfully for this branch or its PR, open the run's Artifacts section and download **open-music-debug-apk**. This is a debug-signed test APK, not a Google Play release. No APK can be considered verified until the build has actually completed.
+When [Android build and core tests](../../actions/workflows/android.yml) succeeds on a feature-branch push, the job saves the APK as an asset of a **draft, private QA release** in [GitHub Releases](../../releases). Open the draft release for the commit and download app-debug.apk. This is a debug-signed test APK, not a published release or Google Play build. GitHub Actions artifacts are deliberately not used because this account hit its artifact storage quota. APK delivery remains unverified until the draft release asset is confirmed.
 
 Android Studio can import this Gradle project. In CI we use the pinned Gradle distribution (no unverified Gradle wrapper binary is committed):
 

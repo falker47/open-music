@@ -23,6 +23,6 @@ Separate logical song identity from local and remote copies. Prefer an available
 ## Gates
 
 1. Pure matcher test: 50 source entries, 40 identical destination files renamed/moved, 10 missing, zero mistaken links.
-2. GitHub Actions at candidate commit: core tests pass, Android debug APK assembles and artifact exists.
+2. GitHub Actions at candidate commit: core tests pass, Android debug APK assembles; the QA draft release asset is available on a feature-branch build.
 3. Android device QA: permissions, scan, search, playback, seek, playlist save/restart, import/export, relink, no audio writes.
 4. Metadata sync QA: provider login, offline edits, concurrent changes, cross-device resume and conflict recovery.
