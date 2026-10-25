@@ -12,6 +12,8 @@ Import uses Android's system document picker and does not require provider OAuth
 
 Working playlists are saved to app-private JSON with Android AtomicFile. A duplicate imported playlist ID is refused rather than overwritten.
 
+Manual additions are idempotent within each playlist for a matching SHA-256 content digest. An already present recording produces feedback without changing playlist entries or timestamps; the same recording is allowed in another playlist. Imported legacy duplicates are preserved in their original order for portable v1 compatibility. Metadata-only similarity never blocks a distinct file.
+
 ## Cloud metadata synchronization — proposed, not implemented
 
 Store only versioned portable JSON (no music) in a user-selected provider. Authentication should use least-privilege scopes or SAF, OS-protected credentials, checksums, optimistic concurrency / ETags where supported, backups and user-visible conflicts. Never choose last-writer-wins silently.

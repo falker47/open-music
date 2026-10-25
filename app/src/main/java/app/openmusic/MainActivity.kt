@@ -154,15 +154,22 @@ private fun OpenMusicApp() {
                 val list = playlists.firstOrNull { it.playlistId == listId }
                     ?: throw IllegalStateException("Playlist non trovata")
                 val identity = file.asCopy(hash).identity
-                val next = list.copy(
-                    updatedAt = Instant.now().toString(),
-                    tracks = list.tracks + PlaylistEntry(UUID.randomUUID().toString(), identity),
-                )
-                persist(playlists.map { if (it.playlistId == listId) next else it })
-                selectedId = listId
+                // Remember the verified local hash even if this entry already exists.
                 localCopies = localCopies.map {
                     if (it.uri == file.uri) file.asCopy(hash) else it
                 }
+                val next = PlaylistRouting.addIfAbsent(
+                    list,
+                    PlaylistEntry(UUID.randomUUID().toString(), identity),
+                    Instant.now().toString(),
+                )
+                if (next == null) {
+                    selectedId = listId
+                    notifyUser("Brano già presente in " + list.name)
+                    return@launch
+                }
+                persist(playlists.map { if (it.playlistId == listId) next else it })
+                selectedId = listId
                 notifyUser("Aggiunto a " + list.name)
             } catch (failure: Exception) {
                 notifyUser("Impossibile aggiungere: " + (failure.localizedMessage ?: "errore"))
