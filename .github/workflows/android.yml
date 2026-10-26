@@ -35,41 +35,15 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.13"
-      - name: Prepare persistent QA signing
-        if: github.event_name == 'push'
-        env:
-          QA_KEYSTORE_B64: ${{ secrets.OPEN_MUSIC_QA_KEYSTORE_B64 }}
-          QA_KEYSTORE_PASSWORD: ${{ secrets.OPEN_MUSIC_QA_STORE_PASSWORD }}
-          QA_KEY_ALIAS: ${{ secrets.OPEN_MUSIC_QA_KEY_ALIAS }}
-          QA_KEY_PASSWORD: ${{ secrets.OPEN_MUSIC_QA_KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          if [[ -n "$QA_KEYSTORE_B64" && -n "$QA_KEYSTORE_PASSWORD" && -n "$QA_KEY_ALIAS" && -n "$QA_KEY_PASSWORD" ]]; then
-            umask 077
-            mkdir -p "$RUNNER_TEMP/open-music-signing"
-            printf '%s' "$QA_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/open-music-signing/qa.jks"
-            echo "QA_KEYSTORE_PATH=$RUNNER_TEMP/open-music-signing/qa.jks" >> "$GITHUB_ENV"
-            echo "QA_SIGNING_READY=true" >> "$GITHUB_ENV"
-          else
-            echo "QA_SIGNING_READY=false" >> "$GITHUB_ENV"
-            echo "::notice::Stable QA signing not configured; build only, no APK published."
-          fi
       - name: Test and assemble debug APK
-        env:
-          QA_KEYSTORE_PASSWORD: ${{ secrets.OPEN_MUSIC_QA_STORE_PASSWORD }}
-          QA_KEY_ALIAS: ${{ secrets.OPEN_MUSIC_QA_KEY_ALIAS }}
-          QA_KEY_PASSWORD: ${{ secrets.OPEN_MUSIC_QA_KEY_PASSWORD }}
         run: gradle :core:test :app:assembleDebug --no-daemon --stacktrace
-      # Debug variant uses the persistent user-owned key only when all four
-      # secrets exist. Never distribute an APK signed by an ephemeral runner key.
-      - name: Verify persistent QA certificate
-        if: github.event_name == 'push' && env.QA_SIGNING_READY == 'true'
-        run: |
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs app/build/outputs/apk/debug/app-debug.apk
-      # Open Music stays public. The only publication gate is persistent
-      # owner-controlled signing; never expose keys in public release assets.
-      - name: Publish public signed QA prerelease
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/feat/') && env.QA_SIGNING_READY == 'true'
+      # Temporary QA mode: publish public debug builds without a persistent key.
+      # Testers explicitly accept uninstall/reinstall and loss of local app data.
+      # Do not publish private music, credentials or signing material.
+      # A draft is not a reliable mobile download channel, even when an asset is uploaded.
+      # Avoid Actions artifacts while this account's artifact storage quota is exhausted.
+      - name: Publish experimental public QA prerelease
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/feat/')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -77,10 +51,11 @@ jobs:
           TAG="qa-${GITHUB_SHA:0:12}"
           FILE="app/build/outputs/apk/debug/app-debug.apk"
           if gh release view "$TAG" >/dev/null 2>&1; then
+            # Reruns must not overwrite existing assets, including immutable releases.
             if ! gh release view "$TAG" --json assets --jq '.assets[].name' | grep -Fxq 'app-debug.apk'; then
               gh release upload "$TAG" "$FILE"
             fi
           else
-            gh release create "$TAG" "$FILE" --prerelease --target "$GITHUB_SHA" --title "Open Music signed QA $TAG" --notes "Public experimental open-source QA APK. Signed with the persistent owner-controlled QA key. Export playlists before any necessary one-time signer migration. No store publication."
+            gh release create "$TAG" "$FILE" --prerelease --target "$GITHUB_SHA" --title "Open Music experimental QA $TAG" --notes "Public experimental debug APK for Android device QA. This build may use a different runner debug certificate than previous APKs. If Android refuses to update it, uninstall the old app and reinstall (this deletes locally stored playlists). No Play Store or stable release."
           fi
           gh release view "$TAG" --json url,isDraft,isPrerelease,assets --jq '{url, isDraft, isPrerelease, assetNames: [.assets[].name]}'

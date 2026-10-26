@@ -40,20 +40,21 @@ are also public and experimental, not stable or Play Store releases.
 
 ## Getting a QA APK
 
-GitHub Actions compile and test each candidate. For feature-branch pushes, the
-workflow publishes a **public experimental QA prerelease** once the owner
-configures a **persistent QA signing key** in GitHub Actions secrets (see
-[Android QA instructions](docs/ANDROID_MEDIA_QA.md)). Public repository
-visibility is intentional and never blocks releases; private signing keys stay
-outside the source code, build artifacts and APK assets.
+This temporary device-testing stage uses **public experimental debug APKs**.
+After each successful feature-branch push, GitHub Actions runs core tests,
+builds the Android APK, and publishes it under **Releases** as a prerelease.
+No keystore, secrets or private repository are required for QA.
 
-When the secrets are missing, compilation and tests run but no APK is released:
-a fresh GitHub runner debug certificate would risk incompatible updates.
-Older QA APKs may have been signed using a different certificate, so Android
-can reject an in-place update. **Export existing playlists to JSON v1 before
-any required uninstall.** Uninstalled application-private data cannot be
-restored automatically. PR #1 remains draft; no merge to `main` or store
-publication is implied.
+The GitHub Actions runner's default debug certificate can differ between
+builds. If Android refuses an in-place update, the tester can **uninstall
+the old version and install the new APK**, knowingly resetting local app data
+(including playlists). Backups are optional for the present disposable QA
+installations; use Export JSON v1 if any playlist should be retained.
+Persistent signing and dependable in-place upgrades are deferred to a later
+release phase.
+
+The source repository stays public under the MIT license. PR #1 remains
+draft: public test APKs are not stable releases or Play Store publication.
 
 Android Studio can import this Gradle project. In CI we use the pinned Gradle distribution (no unverified Gradle wrapper binary is committed):
 

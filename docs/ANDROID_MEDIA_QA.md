@@ -4,7 +4,7 @@ This QA increment deliberately **does not** create a custom lock-screen player o
 
 ## Minimal device test (same device, same 3+ local tracks)
 
-1. Update the existing app **without clearing its data**. Play a local track; confirm the in-app title, artist and progress match the Android media card.
+1. Install the current GitHub QA APK. If Android refuses to upgrade over the previous debug build, uninstall the previous app first and then reinstall; this intentionally clears app-private playlists during disposable QA. Play a local track; confirm the in-app title, artist and progress match the Android media card.
 2. While playing, send the app Home, lock the device and wake the screen **without unlocking**. Note whether a player card is visible on the lock screen. Unlock and verify the card still exists in the notification shade. Check Settings > Notifications > Lock screen (wording varies by OEM), any media-controls/lock-screen switches and, if available, compare another media player. Do not assume the missing card is an Open Music bug.
 3. Repeat Play/Pause and Next/Previous from **(a)** inside Open Music, **(b)** the notification shade with Open Music backgrounded, and **(c)** the locked screen if the OEM offers a player. For each, note approximate tap-to-audible-change delay, whether the title switches immediately and whether a spinner/buffering occurs. Compare cold first playback versus a track already playing.
 4. While music plays, reopen the activity from Home; verify current title, transport state, position and progress, then skip and seek. Rotate the phone if auto-rotation is enabled; check playback continuity and UI synchronization.
@@ -29,15 +29,20 @@ Existing JSON v1, local-only scanning, playlist persistence rules, matching/anti
 
 ## Navigation / expanded player / artwork (next device gate)
 
-- Install **in-place**, only if the installed APK certificate matches the QA certificate. If Android refuses the update, **do not uninstall** until every playlist is exported to portable JSON v1. An uninstall clears private app data; `Playlist · 0` alone does not establish whether this occurred or a separate persistence bug exists. Old GitHub runner debug keys cannot be reconstructed from an APK.
+- For this disposable QA phase, **uninstall/reinstall is permitted** when a different debug signing certificate prevents an in-place update. Doing so clears saved playlists. Export any playlist to portable JSON v1 only if you want to keep it. `Playlist · 0` after reinstall is expected, but the earlier screenshot alone does not prove whether the app was reinstalled.
 - Test with **three-button navigation**: the mini-player and its seek thumb must sit completely above the system navigation area; drag to 25% and 75% and verify audible position. Repeat with **gesture navigation**. Do not hide system controls.
 - Tap the mini-player title: **In riproduzione** opens. Check current title, artist, artwork if embedded locally, seek position/duration, play/pause, previous/next, system Back and **Libreria** return. Test after Home/reopening the Activity while audio keeps playing.
 - Play two local tracks with different embedded covers. `OpenMusicPlayback` now traces `track_transition` and `metadata_changed art_data/art_uri` with monotonic timestamps, but neither proves when the OEM System UI draws the media card. If the card lags and metadata was already current, capture a screen recording for device-side diagnosis. No ExoPlayer tuning or artificial lock-screen overlay is included.
-- Verify **Rock** and **aq** after closing/reopening without uninstall. Backup each playlist with **Esporta** before any signing migration. A first new stable-key build may require one explicit migration reinstall if the previous debug certificate differs, and this may destroy unexported local data.
+- Test playlist persistence **within a single installation**: create or import a small playlist, fully close and reopen the app and confirm it is still there. Do not interpret missing playlists after an uninstall as a persistence defect. Former lists `Rock` and `aq` can only survive if they were exported and imported again.
 
-## Stable QA signing gate (no key in source)
+## Temporary debug QA distribution
 
-The push workflow always compiles/tests. The repository remains **public and open source**. A **public experimental QA prerelease** is published when all four GitHub Actions signing secrets are available:
-`OPEN_MUSIC_QA_KEYSTORE_B64` (base64 of a user-owned, securely backed-up JKS),
-`OPEN_MUSIC_QA_STORE_PASSWORD`, `OPEN_MUSIC_QA_KEY_ALIAS`, and `OPEN_MUSIC_QA_KEY_PASSWORD`.
-The keystore is reconstructed into runner temporary storage, not committed or uploaded as a build artifact. GitHub Actions secrets are not exposed to public readers of the repository. Preserve the owner-controlled key long term; losing it requires another signing migration. The old GitHub default debug certificate cannot be assumed equal to the new key. CI PASS without a released signed APK is **not** an on-device PASS. GitHub Actions artifacts remain disabled due to quota. No repository privacy gate is required.
+During this device-testing phase, GitHub Actions publishes a **public experimental
+prerelease** after a successful feature-branch build, without requiring a
+persistent signing secret. It uses the runner's standard Android debug key,
+which may differ between CI runs. The tester has explicitly opted to
+uninstall/reinstall when needed, accepting that app-private playlists are erased.
+Permanent signing, seamless upgrades and data migration remain deferred.
+No keystore, credentials, personal audio files or private device data are
+committed or uploaded. CI and a downloadable APK alone do not constitute
+successful device QA. Actions artifacts remain disabled due to quota.
