@@ -18,6 +18,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
@@ -51,24 +53,13 @@ import java.io.ByteArrayOutputStream
 import java.time.Instant
 import java.util.UUID
 
-private val Background = Color(0xFF0E141A)
-private val Surface = Color(0xFF19242C)
-private val Accent = Color(0xFF8BE0CB)
-private val Muted = Color(0xFFB4C4C8)
+private val Muted = Color(0xFF9DADBC)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent {
-            MaterialTheme(colorScheme = darkColorScheme(
-                background = Background, surface = Surface,
-                primary = Accent, secondary = Accent,
-                onBackground = Color.White, onSurface = Color.White,
-            )) {
-                OpenMusicApp()
-            }
-        }
+        setContent { OpenMusicTheme { OpenMusicApp() } }
     }
 }
 
@@ -78,6 +69,7 @@ private fun OpenMusicApp() {
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     val storage = remember { PlaylistStorage(context.applicationContext) }
+    val artworkCache = remember { LocalArtworkCache() }
     // The playback engine lives in PlaybackService; this UI only holds a controller.
     var player by remember { mutableStateOf<MediaController?>(null) }
     var audioFiles by remember { mutableStateOf(emptyList<AudioFile>()) }
@@ -97,7 +89,6 @@ private fun OpenMusicApp() {
     var position by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
     var currentUri by remember { mutableStateOf<Uri?>(null) }
-    var artwork by remember { mutableStateOf<ImageBitmap?>(null) }
     var showNowPlaying by rememberSaveable { mutableStateOf(false) }
     val selected = playlists.firstOrNull { it.playlistId == selectedId }
     val matches = remember(selected, localCopies) {
@@ -393,15 +384,6 @@ private fun OpenMusicApp() {
         }
     }
 
-    // Decode embedded local artwork only for the expanded player, off the UI thread.
-    // Do not alter ExoPlayer buffering or speculate about OEM media-card animation.
-    LaunchedEffect(currentUri, showNowPlaying) {
-        artwork = null
-        val uri = currentUri
-        if (showNowPlaying && uri != null) {
-            artwork = readEmbeddedArtwork(context, uri)
-        }
-    }
 
     if (createDialog) {
         AlertDialog(
@@ -411,14 +393,19 @@ private fun OpenMusicApp() {
                 OutlinedTextField(
                     value = proposedName,
                     onValueChange = { proposedName = it },
-                    label = { Text("Nome") },
+                    label = { Text("Nome playlist") },
+                    placeholder = { Text("Es. Preferiti") },
                     singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
                 )
             },
-            confirmButton = { TextButton(onClick = { createPlaylist() }) { Text("Crea") } },
-            dismissButton = {
-                TextButton(onClick = { createDialog = false }) { Text("Annulla") }
+            confirmButton = {
+                TextButton(onClick = { createPlaylist() }, enabled = proposedName.trim().isNotEmpty()) {
+                    Text("Crea")
+                }
             },
+            dismissButton = { TextButton(onClick = { createDialog = false }) { Text("Annulla") } },
+            shape = RoundedCornerShape(26.dp),
         )
     }
 
@@ -427,389 +414,270 @@ private fun OpenMusicApp() {
             onDismissRequest = { pendingAdd = null },
             title = { Text("Scegli la playlist") },
             text = {
-                Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
-                    Text("Aggiungi «" + file.title + "» a:", color = Muted,
-                        style = MaterialTheme.typography.bodySmall)
-                    Spacer(Modifier.height(8.dp))
+                Column(Modifier.heightIn(max = 370.dp).verticalScroll(rememberScrollState())) {
+                    Text("Aggiungi \"" + file.title + "\" a:",
+                        color = Muted, style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Spacer(Modifier.height(10.dp))
                     playlists.forEach { list ->
-                        TextButton(
+                        Surface(
                             onClick = {
                                 pendingAdd = null
                                 addToPlaylist(file, list.playlistId)
                             },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                            color = MusicPalette.elevated,
+                            shape = RoundedCornerShape(14.dp),
                         ) {
-                            Column(Modifier.fillMaxWidth()) {
-                                Text(list.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(list.tracks.size.toString() + " brani", color = Muted,
-                                    style = MaterialTheme.typography.labelSmall)
+                            Column(Modifier.padding(horizontal = 14.dp, vertical = 11.dp)) {
+                                Text(list.name, style = MaterialTheme.typography.titleMedium,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(list.tracks.size.toString() + " brani",
+                                    color = Muted, style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }
                 }
             },
             confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { pendingAdd = null }) { Text("Annulla") }
-            },
+            dismissButton = { TextButton(onClick = { pendingAdd = null }) { Text("Annulla") } },
+            shape = RoundedCornerShape(26.dp),
         )
     }
 
     BackHandler(enabled = showNowPlaying) { showNowPlaying = false }
-
+    val filtered = remember(audioFiles, search) {
+        audioFiles.filter {
+            it.title.contains(search, ignoreCase = true) ||
+                it.artist.orEmpty().contains(search, ignoreCase = true)
+        }
+    }
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
-        containerColor = Background,
+        containerColor = MusicPalette.background,
         contentWindowInsets = WindowInsets.safeDrawing,
         bottomBar = {
-            if (!showNowPlaying && nowTitle.isNotEmpty()) {
-                // Edge-to-edge makes the system nav area part of the window.
-                // Keep the mini-player and seek slider ABOVE three-button/gesture navigation.
-                Box(Modifier.fillMaxWidth().navigationBarsPadding()) {
-                    PlayerBar(
-                        title = nowTitle, artist = nowArtist, playing = playing,
-                        positionMs = position, durationMs = duration,
-                        onOpen = { showNowPlaying = true },
-                        onSeek = { millis -> player?.seekTo(millis) },
-                        onBack = { player?.let { if (it.hasPreviousMediaItem()) it.seekToPreviousMediaItem() } },
-                        onPlayPause = { player?.let { if (it.isPlaying) it.pause() else it.play() } },
-                        onNext = { player?.let { if (it.hasNextMediaItem()) it.seekToNextMediaItem() } },
-                    )
+            if (!showNowPlaying) {
+                Column(
+                    Modifier.fillMaxWidth().background(MusicPalette.background)
+                        .navigationBarsPadding(),
+                ) {
+                    if (nowTitle.isNotEmpty()) {
+                        MusicMiniPlayer(
+                            title = nowTitle, artist = nowArtist, uri = currentUri?.toString(),
+                            cache = artworkCache, playing = playing,
+                            positionMs = position, durationMs = duration,
+                            onOpen = { showNowPlaying = true },
+                            onSeek = { millis -> player?.seekTo(millis) },
+                            onPrevious = {
+                                player?.let { if (it.hasPreviousMediaItem()) it.seekToPreviousMediaItem() }
+                            },
+                            onPlayPause = { player?.let { if (it.isPlaying) it.pause() else it.play() } },
+                            onNext = { player?.let { if (it.hasNextMediaItem()) it.seekToNextMediaItem() } },
+                        )
+                    }
+                    MusicBottomNavigation(tab = tab, onTab = { tab = it })
                 }
             }
         },
-    ) { safeArea ->
+    ) { insets ->
         if (showNowPlaying && nowTitle.isNotEmpty()) {
-            NowPlayingScreen(
-                modifier = Modifier.fillMaxSize().padding(safeArea),
-                title = nowTitle, artist = nowArtist, artwork = artwork,
-                playing = playing, positionMs = position, durationMs = duration,
+            MusicNowPlaying(
+                modifier = Modifier.fillMaxSize().padding(insets),
+                title = nowTitle, artist = nowArtist, uri = currentUri?.toString(),
+                cache = artworkCache, playing = playing,
+                positionMs = position, durationMs = duration,
                 onClose = { showNowPlaying = false },
                 onSeek = { millis -> player?.seekTo(millis) },
-                onBack = { player?.let { if (it.hasPreviousMediaItem()) it.seekToPreviousMediaItem() } },
+                onPrevious = {
+                    player?.let { if (it.hasPreviousMediaItem()) it.seekToPreviousMediaItem() }
+                },
                 onPlayPause = { player?.let { if (it.isPlaying) it.pause() else it.play() } },
                 onNext = { player?.let { if (it.hasNextMediaItem()) it.seekToNextMediaItem() } },
             )
         } else {
-        Column(Modifier.fillMaxSize().padding(safeArea).padding(horizontal = 16.dp)) {
-            Spacer(Modifier.height(12.dp))
-            Text("Open Music", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text("La tua musica, senza vincoli", color = Muted, style = MaterialTheme.typography.bodySmall)
-            Spacer(Modifier.height(12.dp))
-            TabRow(selectedTabIndex = tab, containerColor = Background) {
-                Tab(selected = tab == 0, onClick = { tab = 0 },
-                    text = { Text("Libreria · " + audioFiles.size) })
-                Tab(selected = tab == 1, onClick = { tab = 1 },
-                    text = { Text("Playlist · " + playlists.size) })
-            }
-            Spacer(Modifier.height(12.dp))
-            if (busy.isNotEmpty()) {
-                LinearProgressIndicator(Modifier.fillMaxWidth())
-                Text(busy, color = Muted, style = MaterialTheme.typography.labelSmall)
-                Spacer(Modifier.height(8.dp))
-            }
-
-            if (tab == 0) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Brani locali", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                    TextButton(onClick = { requestScan() }, enabled = busy.isEmpty()) { Text("Aggiorna") }
-                }
-                OutlinedTextField(
-                    value = search,
-                    onValueChange = { search = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("Cerca brano o artista") },
-                    singleLine = true,
-                )
-                Spacer(Modifier.height(8.dp))
-                val filtered = audioFiles.filter {
-                    it.title.contains(search, ignoreCase = true) ||
-                        it.artist.orEmpty().contains(search, ignoreCase = true)
-                }
-                if (filtered.isEmpty()) {
-                    Column(Modifier.fillMaxWidth().padding(vertical = 44.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Nessun brano da mostrare", fontWeight = FontWeight.Medium)
-                        Text("Tocca Aggiorna e consenti l'accesso alla musica.",
-                            style = MaterialTheme.typography.bodySmall, color = Muted)
-                        Spacer(Modifier.height(12.dp))
-                        Button(onClick = { requestScan() }) { Text("Scansiona dispositivo") }
-                    }
-                } else {
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(filtered, key = { it.uri }) { file ->
-                            AudioRow(
-                                file = file,
-                                onPlay = { playQueue(filtered, filtered.indexOf(file)) },
-                                onAdd = { requestAddToPlaylist(file) },
-                            )
-                            HorizontalDivider(color = Color.White.copy(alpha = 0.06f))
-                        }
-                    }
-                }
-            } else {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Le mie playlist", Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                    TextButton(onClick = { importer.launch(arrayOf("application/json", "text/plain")) },
-                        enabled = busy.isEmpty()) { Text("Importa") }
-                    TextButton(onClick = { createDialog = true }, enabled = busy.isEmpty()) { Text("+ Nuova") }
-                }
-                if (playlists.isNotEmpty()) {
-                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        playlists.forEach { list ->
-                            FilterChip(
-                                selected = selectedId == list.playlistId,
-                                onClick = { selectedId = list.playlistId },
-                                label = { Text(list.name, maxLines = 1) },
-                            )
-                        }
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                if (selected == null) {
-                    Column(Modifier.fillMaxWidth().padding(vertical = 44.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Le playlist vivono indipendentemente dai file.")
-                        Text("Crea o importa una playlist per iniziare.",
-                            color = Muted, style = MaterialTheme.typography.bodySmall)
-                    }
-                } else {
-                    Row(verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(selected.name, Modifier.weight(1f), fontWeight = FontWeight.SemiBold,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        OutlinedButton(
-                            onClick = {
-                                exportPending = selected
-                                exporter.launch(selected.name.replace(Regex("[^a-zA-Z0-9_-]"), "_") + ".json")
-                            },
-                            enabled = busy.isEmpty(),
-                        ) { Text("Esporta") }
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Text(selected.tracks.size.toString() + " brani",
-                            color = Muted, style = MaterialTheme.typography.bodySmall)
-                        Spacer(Modifier.weight(1f))
-                        TextButton(onClick = { relink() }, enabled = busy.isEmpty()) {
-                            Text("Ricollega")
-                        }
-                    }
-                    val exact = matches.count {
-                        it.status == MatchStatus.EXACT || it.status == MatchStatus.METADATA
-                    }
-                    Text(exact.toString() + " disponibili · " +
-                        (selected.tracks.size - exact) + " da verificare/mancanti",
-                        color = Muted, style = MaterialTheme.typography.labelSmall)
-                    Spacer(Modifier.height(8.dp))
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(selected.tracks, key = { it.entryId }) { entry ->
-                            val resolution = byEntryId[entry.entryId]
-                            val playable = resolution?.localUri?.let(mediaByUri::get)
-                            Row(
-                                modifier = Modifier.fillMaxWidth().heightIn(min = 62.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(
-                                    Modifier.weight(1f).clickable(enabled = playable != null) {
-                                        val queue = matches.mapNotNull { it.localUri?.let(mediaByUri::get) }
-                                        val index = queue.indexOfFirst { it.uri == playable?.uri }
-                                        playQueue(queue, index)
-                                    }.padding(vertical = 8.dp),
-                                ) {
-                                    Text(entry.identity.metadata.title ?: entry.identity.filenameHint ?: "Brano",
-                                        fontWeight = FontWeight.Medium, maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis)
-                                    Text(entry.identity.metadata.artist.orEmpty() + " · " +
-                                        (resolution?.status?.name?.lowercase() ?: "missing"),
-                                        color = if (playable != null) Accent else Muted,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        maxLines = 1)
+            Column(
+                Modifier.fillMaxSize().padding(insets).padding(horizontal = 18.dp),
+            ) {
+                MusicHeader(if (tab == 0) audioFiles.size else playlists.size, tab == 0)
+                if (busy.isNotEmpty()) MusicBusyIndicator(busy)
+                if (tab == 0) {
+                    MusicSectionHeader(
+                        title = "Tutti i brani",
+                        subtitle = audioFiles.size.toString() + " brani sul dispositivo",
+                        actionLabel = "Aggiorna",
+                        actionIcon = androidx.compose.material.icons.Icons.Rounded.Refresh,
+                        onAction = { if (busy.isEmpty()) requestScan() },
+                    )
+                    OutlinedTextField(
+                        value = search, onValueChange = { search = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("Cerca brano o artista") },
+                        leadingIcon = {
+                            Icon(androidx.compose.material.icons.Icons.Rounded.Search,
+                                contentDescription = null)
+                        },
+                        trailingIcon = {
+                            if (search.isNotEmpty()) {
+                                IconButton(onClick = { search = "" }) {
+                                    Icon(androidx.compose.material.icons.Icons.Rounded.Close,
+                                        contentDescription = "Cancella ricerca")
                                 }
-                                TextButton(onClick = {
-                                    val next = selected.copy(
-                                        updatedAt = Instant.now().toString(),
-                                        tracks = selected.tracks.filterNot { it.entryId == entry.entryId },
-                                    )
-                                    persist(playlists.map {
-                                        if (it.playlistId == selected.playlistId) next else it
-                                    })
-                                }) { Text("Rimuovi", style = MaterialTheme.typography.labelSmall) }
                             }
-                            HorizontalDivider(color = Color.White.copy(alpha = 0.06f))
+                        },
+                        shape = RoundedCornerShape(18.dp), singleLine = true,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    if (filtered.isEmpty()) {
+                        MusicEmptyState(
+                            title = if (search.isNotBlank()) "Nessun risultato" else "La libreria è vuota",
+                            description = if (search.isNotBlank()) "Prova un altro titolo o artista."
+                                else "Consenti l'accesso alla musica e aggiorna per trovare i tuoi brani.",
+                            icon = androidx.compose.material.icons.Icons.Rounded.LibraryMusic,
+                            buttonLabel = if (search.isNotBlank()) "Cancella ricerca" else "Scansiona dispositivo",
+                            onAction = { if (search.isNotBlank()) search = "" else requestScan() },
+                        )
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(bottom = 18.dp),
+                        ) {
+                            itemsIndexed(filtered, key = { _, file -> file.uri }) { index, file ->
+                                MusicTrackRow(
+                                    file = file, cache = artworkCache,
+                                    onPlay = { playQueue(filtered, index) },
+                                    onAdd = { requestAddToPlaylist(file) },
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = 20.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
+                        item {
+                            MusicSectionHeader(
+                                title = "Raccolte",
+                                subtitle = "Playlist locali e portabili",
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                                Button(
+                                    onClick = { createDialog = true }, enabled = busy.isEmpty(),
+                                    modifier = Modifier.weight(1f),
+                                    contentPadding = PaddingValues(horizontal = 10.dp),
+                                ) {
+                                    Icon(androidx.compose.material.icons.Icons.Rounded.Add,
+                                        contentDescription = null, modifier = Modifier.size(19.dp))
+                                    Spacer(Modifier.width(5.dp))
+                                    Text("Nuova playlist", maxLines = 1)
+                                }
+                                OutlinedButton(
+                                    onClick = { importer.launch(arrayOf("application/json", "text/plain")) },
+                                    enabled = busy.isEmpty(),
+                                    contentPadding = PaddingValues(horizontal = 11.dp),
+                                ) {
+                                    Icon(androidx.compose.material.icons.Icons.Rounded.FileUpload,
+                                        contentDescription = null, modifier = Modifier.size(19.dp))
+                                    Spacer(Modifier.width(5.dp))
+                                    Text("Importa", maxLines = 1)
+                                }
+                            }
+                        }
+                        if (playlists.isNotEmpty()) {
+                            item {
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(9.dp),
+                                    contentPadding = PaddingValues(vertical = 3.dp),
+                                ) {
+                                    items(playlists, key = { it.playlistId }) { list ->
+                                        MusicPlaylistCard(
+                                            name = list.name, count = list.tracks.size,
+                                            selected = list.playlistId == selectedId,
+                                            onClick = { selectedId = list.playlistId },
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        if (selected == null) {
+                            item {
+                                MusicEmptyState(
+                                    title = "La tua prima playlist",
+                                    description = "Crea una raccolta oppure importa un file JSON v1. I brani restano sul tuo dispositivo.",
+                                    icon = androidx.compose.material.icons.Icons.Rounded.PlaylistPlay,
+                                    buttonLabel = "Crea playlist",
+                                    onAction = { createDialog = true },
+                                )
+                            }
+                        } else {
+                            val available = matches.count {
+                                it.status == MatchStatus.EXACT || it.status == MatchStatus.METADATA
+                            }
+                            item {
+                                MusicPlaylistHero(
+                                    name = selected.name, trackCount = selected.tracks.size,
+                                    available = available, busy = busy.isNotEmpty(),
+                                    onRelink = { relink() },
+                                    onExport = {
+                                        exportPending = selected
+                                        exporter.launch(
+                                            selected.name.replace(Regex("[^a-zA-Z0-9_-]"), "_") + ".json",
+                                        )
+                                    },
+                                )
+                            }
+                            item {
+                                MusicSectionHeader(
+                                    title = "Brani nella playlist",
+                                    subtitle = "Tocca un brano disponibile per ascoltarlo",
+                                )
+                            }
+                            if (selected.tracks.isEmpty()) {
+                                item {
+                                    MusicEmptyState(
+                                        title = "Playlist vuota",
+                                        description = "Dalla Libreria tocca + accanto a un brano per aggiungerlo qui.",
+                                        icon = androidx.compose.material.icons.Icons.Rounded.MusicNote,
+                                    )
+                                }
+                            } else {
+                                items(selected.tracks, key = { it.entryId }) { entry ->
+                                    val resolution = byEntryId[entry.entryId]
+                                    val playable = resolution?.localUri?.let(mediaByUri::get)
+                                    val title = entry.identity.metadata.title
+                                        ?: entry.identity.filenameHint ?: "Brano"
+                                    MusicPlaylistTrackRow(
+                                        title = title, artist = entry.identity.metadata.artist,
+                                        status = resolution?.status, playable = playable,
+                                        cache = artworkCache,
+                                        onPlay = {
+                                            if (playable != null) {
+                                                val queue = matches.mapNotNull {
+                                                    it.localUri?.let(mediaByUri::get)
+                                                }
+                                                val index = queue.indexOfFirst { it.uri == playable.uri }
+                                                if (index >= 0) playQueue(queue, index)
+                                            }
+                                        },
+                                        onRemove = {
+                                            val updated = selected.copy(
+                                                updatedAt = Instant.now().toString(),
+                                                tracks = selected.tracks.filterNot { it.entryId == entry.entryId },
+                                            )
+                                            persist(playlists.map {
+                                                if (it.playlistId == selected.playlistId) updated else it
+                                            })
+                                        },
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
         }
-        }
-    }
-}
-
-@Composable
-private fun AudioRow(file: AudioFile, onPlay: () -> Unit, onAdd: () -> Unit) {
-    Row(Modifier.fillMaxWidth().heightIn(min = 64.dp),
-        verticalAlignment = Alignment.CenterVertically) {
-        Column(
-            Modifier.weight(1f).clickable(onClick = onPlay).padding(vertical = 10.dp),
-        ) {
-            Text(file.title, fontWeight = FontWeight.Medium, maxLines = 1,
-                overflow = TextOverflow.Ellipsis)
-            Text(file.artist ?: "Artista sconosciuto", color = Muted,
-                style = MaterialTheme.typography.bodySmall, maxLines = 1)
-        }
-        TextButton(onClick = onAdd) { Text("+ Playlist", style = MaterialTheme.typography.labelSmall) }
-    }
-}
-
-/**
- * Both surfaces read from the same MediaController snapshot. A completed drag issues
- * a single seek; tick updates cannot overwrite the thumb while the user drags.
- */
-@Composable
-private fun PlaybackSeek(
-    trackKey: String,
-    positionMs: Long,
-    durationMs: Long,
-    onSeek: (Long) -> Unit,
-) {
-    var dragFraction by remember(trackKey) { mutableStateOf<Float?>(null) }
-    val actualFraction = if (durationMs > 0L)
-        (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
-    Slider(
-        value = dragFraction ?: actualFraction,
-        onValueChange = { dragFraction = it },
-        onValueChangeFinished = {
-            dragFraction?.let { if (durationMs > 0L) onSeek((it * durationMs).toLong()) }
-            dragFraction = null
-        },
-        enabled = durationMs > 0L,
-        modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp),
-    )
-}
-
-@Composable
-private fun PlayerBar(
-    title: String, artist: String, playing: Boolean,
-    positionMs: Long, durationMs: Long, onOpen: () -> Unit,
-    onSeek: (Long) -> Unit, onBack: () -> Unit,
-    onPlayPause: () -> Unit, onNext: () -> Unit,
-) {
-    SurfaceBox {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(
-                    Modifier.weight(1f).clickable(onClick = onOpen)
-                        .padding(vertical = 10.dp),
-                ) {
-                    Text(title, fontWeight = FontWeight.SemiBold, maxLines = 1,
-                        overflow = TextOverflow.Ellipsis)
-                    Text(artist.ifBlank { "Artista sconosciuto" }, color = Muted,
-                        style = MaterialTheme.typography.bodySmall, maxLines = 1)
-                    Text("Apri In riproduzione", color = Accent,
-                        style = MaterialTheme.typography.labelSmall)
-                }
-                TextButton(onClick = onBack) { Text("◀◀") }
-                TextButton(onClick = onPlayPause) { Text(if (playing) "Pausa" else "Play") }
-                TextButton(onClick = onNext) { Text("▶▶") }
-            }
-            PlaybackSeek(title, positionMs, durationMs, onSeek)
-        }
-    }
-}
-
-@Composable
-private fun NowPlayingScreen(
-    modifier: Modifier, title: String, artist: String, artwork: ImageBitmap?,
-    playing: Boolean, positionMs: Long, durationMs: Long,
-    onClose: () -> Unit, onSeek: (Long) -> Unit,
-    onBack: () -> Unit, onPlayPause: () -> Unit, onNext: () -> Unit,
-) {
-    Column(
-        modifier.verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onClose) { Text("‹ Libreria") }
-            Spacer(Modifier.weight(1f))
-            Text("In riproduzione", style = MaterialTheme.typography.titleMedium)
-        }
-        Spacer(Modifier.height(18.dp))
-        Box(
-            modifier = Modifier.fillMaxWidth().widthIn(max = 360.dp)
-                .aspectRatio(1f).clip(RoundedCornerShape(16.dp))
-                .background(Surface),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (artwork != null) {
-                Image(bitmap = artwork, contentDescription = "Copertina del brano",
-                    modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-            } else {
-                Text("Copertina non disponibile", color = Muted)
-            }
-        }
-        Spacer(Modifier.height(24.dp))
-        Text(title, style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold, maxLines = 2,
-            overflow = TextOverflow.Ellipsis)
-        Text(artist.ifBlank { "Artista sconosciuto" }, color = Muted,
-            style = MaterialTheme.typography.bodyMedium)
-        Spacer(Modifier.height(16.dp))
-        PlaybackSeek(title, positionMs, durationMs, onSeek)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(formatPlaybackTime(positionMs), color = Muted)
-            Text(if (durationMs > 0L) formatPlaybackTime(durationMs) else "--:--",
-                color = Muted)
-        }
-        Spacer(Modifier.height(16.dp))
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            OutlinedButton(onClick = onBack) { Text("◀◀ Precedente") }
-            Button(onClick = onPlayPause) { Text(if (playing) "Pausa" else "Play") }
-            OutlinedButton(onClick = onNext) { Text("Successivo ▶▶") }
-        }
-    }
-}
-
-private fun formatPlaybackTime(ms: Long): String {
-    val seconds = ms.coerceAtLeast(0L) / 1_000L
-    return if (seconds >= 3600L) "%d:%02d:%02d".format(
-        seconds / 3600L, (seconds / 60L) % 60L, seconds % 60L,
-    ) else "%d:%02d".format(seconds / 60L, seconds % 60L)
-}
-
-/** Only local file metadata; never downloads audio or artwork from cloud providers. */
-private suspend fun readEmbeddedArtwork(context: android.content.Context, uri: Uri): ImageBitmap? =
-    withContext(Dispatchers.IO) {
-        val retriever = MediaMetadataRetriever()
-        try {
-            retriever.setDataSource(context, uri)
-            val bytes = retriever.embeddedPicture ?: return@withContext null
-            if (bytes.size > 5_000_000) return@withContext null
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-            var sampleSize = 1
-            while (maxOf(bounds.outWidth, bounds.outHeight) / sampleSize > 720) {
-                sampleSize *= 2
-            }
-            val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)?.asImageBitmap()
-        } catch (_: RuntimeException) {
-            null
-        } finally {
-            retriever.release()
-        }
     }
 
-@Composable
-private fun SurfaceBox(content: @Composable () -> Unit) {
-    androidx.compose.material3.Surface(
-        color = Surface, shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
-        content = content,
-    )
 }
