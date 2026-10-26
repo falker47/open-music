@@ -12,32 +12,35 @@ if ($null -eq $keytool -and $env:ProgramFiles) {
     if (Test-Path $candidate) { $keytool = Get-Item $candidate }
 }
 if ($null -eq $keytool) { throw 'JDK keytool not found. Install JDK 17 or Android Studio.' }
-$tool = $keytool.Source
+$tool = if ($keytool -is [System.IO.FileInfo]) { $keytool.FullName } else { $keytool.Source }
 $directory = Join-Path ([Environment]::GetFolderPath('UserProfile')) '.open-music'
 New-Item -ItemType Directory -Path $directory -Force | Out-Null
 $path = Join-Path $directory 'open-music-qa.p12'
-if (Test-Path $path) {
-    throw "QA key already exists at $path. Keep the existing key: do not rotate it."
-}
-$securePassword = Read-Host 'Create a QA signing password (at least 16 characters)' -AsSecureString
+$existing = Test-Path $path
+$prompt = if ($existing) { 'Enter the EXISTING QA key password (no key rotation)' } else { 'Create a QA signing password (at least 16 characters)' }
+$securePassword = Read-Host $prompt -AsSecureString
 $password = [System.Net.NetworkCredential]::new('', $securePassword).Password
 if ($password.Length -lt 16 -or $password.Contains([char]10) -or $password.Contains([char]13)) {
     throw 'Password must have at least 16 characters and no newlines.'
 }
-& $tool -genkeypair -noprompt -storetype PKCS12 -keystore $path `
-    -storepass $password -alias 'openmusic-qa' -keypass $password `
-    -keyalg RSA -keysize 3072 -validity 3650 `
-    -dname 'CN=Open Music QA, OU=QA, O=Open Music'
-if ($LASTEXITCODE -ne 0) { throw 'Could not create the QA keystore.' }
+if (-not $existing) {
+    & $tool -genkeypair -noprompt -storetype PKCS12 -keystore $path `
+        -storepass $password -alias 'openmusic-qa' -keypass $password `
+        -keyalg RSA -keysize 3072 -validity 3650 `
+        -dname 'CN=Open Music QA, OU=QA, O=Open Music'
+    if ($LASTEXITCODE -ne 0) { throw 'Could not create the QA keystore.' }
+}
+$certificate = & $tool -list -v -storetype PKCS12 -keystore $path `
+    -storepass $password -alias 'openmusic-qa' 2>&1
+if ($LASTEXITCODE -ne 0) { throw 'QA keystore/password check failed; nothing copied.' }
 $payload = @{
     keystoreBase64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($path))
     password = $password
 } | ConvertTo-Json -Compress
 Set-Clipboard -Value $payload
-Write-Host "QA key created: $path"
+Write-Host "QA key preserved: $path"
 Write-Host 'The secret payload is in the clipboard. Paste it ONLY into GitHub Actions secret OPEN_MUSIC_QA_SIGNING.'
 Write-Host 'Keep an encrypted backup of the .p12 and its password; losing them breaks stable QA upgrades.'
-& $tool -list -v -storetype PKCS12 -keystore $path -storepass $password `
-    -alias 'openmusic-qa' | Select-String -Pattern 'SHA1:'
+$certificate | Select-String -Pattern 'SHA1:'
 $password = $null
 $payload = $null
