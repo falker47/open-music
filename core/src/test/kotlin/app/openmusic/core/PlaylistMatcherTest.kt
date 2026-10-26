@@ -100,6 +100,34 @@ class PlaylistMatcherTest {
         )
     }
 
+    @Test fun verificationDoesNotPrematurelyMarkMissing() {
+        assertEquals(VerificationDisplay.ANALYZING,
+            PlaylistVerification.display(MatchStatus.MISSING, true, false))
+        assertEquals(VerificationDisplay.REVIEW,
+            PlaylistVerification.display(MatchStatus.MISSING, false, false))
+        assertEquals(VerificationDisplay.MISSING,
+            PlaylistVerification.display(MatchStatus.MISSING, false, true))
+        assertEquals(VerificationDisplay.AMBIGUOUS,
+            PlaylistVerification.display(MatchStatus.AMBIGUOUS, false, true))
+        assertEquals(VerificationDisplay.AVAILABLE,
+            PlaylistVerification.display(MatchStatus.EXACT, false, false))
+        assertEquals(VerificationDisplay.REVIEW,
+            PlaylistVerification.display(MatchStatus.METADATA, false, true))
+    }
+
+    @Test fun importedIdentityAndOrderStayUnchangedDuringMatching() {
+        val input = playlist(listOf(entry(2), entry(1), entry(2).copy(entryId = "copy")))
+        val originalEntries = input.tracks.toList()
+        val result = PlaylistMatcher.resolve(input, listOf(
+            LocalCopy("uri:2", TrackIdentity(hash(2), meta(2))),
+            LocalCopy("uri:1", TrackIdentity(hash(1), meta(1))),
+        ))
+        assertEquals(listOf("entry-2", "entry-1", "copy"), result.map { it.entryId })
+        assertEquals(originalEntries, input.tracks)
+        assertEquals(listOf(MatchStatus.EXACT, MatchStatus.EXACT, MatchStatus.EXACT),
+            result.map { it.status })
+    }
+
     @Test fun playlistContainsNoDevicePathByConstruction() {
         val entry = entry(1)
         assertEquals("old-1.mp3", entry.identity.filenameHint)

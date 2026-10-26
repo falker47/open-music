@@ -69,6 +69,16 @@ class PlaylistRoutingTest {
         assertEquals(2, imported.tracks.size)
     }
 
+    @Test fun chooserShowsDuplicatesOnlyInVerifiedDestinations() {
+        val hash = "a".repeat(64)
+        val first = playlist("rock").copy(tracks = listOf(entry("one", hash)))
+        val second = playlist("other")
+        assertEquals(true, PlaylistRouting.containsVerifiedHash(first, hash.uppercase()))
+        assertEquals(false, PlaylistRouting.containsVerifiedHash(second, hash))
+        assertEquals(false, PlaylistRouting.containsVerifiedHash(first, null))
+        assertEquals(false, PlaylistRouting.containsVerifiedHash(first, "b".repeat(64)))
+    }
+
     @Test fun missingHashCannotSafelyProveTwoTracksAreIdentical() {
         val first = entry("one", null)
         val second = entry("two", null)

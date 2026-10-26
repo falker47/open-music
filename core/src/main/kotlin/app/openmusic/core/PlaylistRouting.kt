@@ -16,15 +16,17 @@ object PlaylistRouting {
      * Existing imported entries are intentionally left unchanged.
      * A null SHA-256 cannot safely establish content equality.
      */
+    fun containsVerifiedHash(playlist: PortablePlaylist, sha256: String?): Boolean =
+        !sha256.isNullOrBlank() && playlist.tracks.any {
+            it.identity.sha256?.equals(sha256, ignoreCase = true) == true
+        }
+
     fun addIfAbsent(
         playlist: PortablePlaylist,
         entry: PlaylistEntry,
         updatedAt: String,
     ): PortablePlaylist? {
-        val hash = entry.identity.sha256
-        if (!hash.isNullOrBlank() && playlist.tracks.any {
-                it.identity.sha256?.equals(hash, ignoreCase = true) == true
-            }) return null
+        if (containsVerifiedHash(playlist, entry.identity.sha256)) return null
         return playlist.copy(updatedAt = updatedAt, tracks = playlist.tracks + entry)
     }
 

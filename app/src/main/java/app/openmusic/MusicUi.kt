@@ -54,6 +54,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.openmusic.core.MatchStatus
+import app.openmusic.core.PlaylistVerification
+import app.openmusic.core.VerificationDisplay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.max
@@ -63,16 +65,16 @@ import kotlin.math.max
  * is owned by these components; commands are delegated to MainActivity's existing handlers.
  */
 internal object MusicPalette {
-    val background = Color(0xFF090E16)
-    val surface = Color(0xFF151E2B)
-    val elevated = Color(0xFF1C2938)
-    val border = Color(0xFF2A3949)
-    val primary = Color(0xFF83E8CB)
-    val primaryDark = Color(0xFF0D3029)
-    val text = Color(0xFFF5F8FA)
-    val muted = Color(0xFF9DADBC)
-    val subtle = Color(0xFF6F8191)
-    val warning = Color(0xFFF4C783)
+    val background = Color(0xFF100E0D)
+    val surface = Color(0xFF201A17)
+    val elevated = Color(0xFF30241D)
+    val border = Color(0xFF4A3429)
+    val primary = Color(0xFFFFA552)
+    val primaryDark = Color(0xFF301703)
+    val text = Color(0xFFFFF6F0)
+    val muted = Color(0xFFC7B8AE)
+    val subtle = Color(0xFF9B8072)
+    val warning = Color(0xFFFFC18A)
 }
 
 @Composable
@@ -178,7 +180,7 @@ internal fun MusicArt(
     }
     Box(
         modifier = modifier.clip(RoundedCornerShape(17.dp))
-            .background(Brush.linearGradient(listOf(Color(0xFF315365), Color(0xFF18383F), Color(0xFF132833))))
+            .background(Brush.linearGradient(listOf(Color(0xFF62402B), Color(0xFF35251E), Color(0xFF241A17))))
             .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(17.dp)),
         contentAlignment = Alignment.Center,
     ) {
@@ -191,7 +193,7 @@ internal fun MusicArt(
             )
         } else {
             Icon(Icons.Rounded.MusicNote, contentDescription = "Copertina non disponibile",
-                modifier = Modifier.fillMaxSize(0.42f), tint = Color(0xFF9CD6D4))
+                modifier = Modifier.fillMaxSize(0.42f), tint = MusicPalette.primary)
         }
     }
 }
@@ -204,7 +206,7 @@ internal fun MusicHeader(count: Int, isLibrary: Boolean) {
     ) {
         Box(
             Modifier.size(46.dp).clip(RoundedCornerShape(16.dp))
-                .background(Brush.linearGradient(listOf(MusicPalette.primary, Color(0xFF4DB7BF)))),
+                .background(Brush.linearGradient(listOf(MusicPalette.primary, Color(0xFFEA7930)))),
             contentAlignment = Alignment.Center,
         ) {
             Icon(Icons.Rounded.MusicNote, contentDescription = null,
@@ -277,7 +279,7 @@ private fun NavigationDestination(
 }
 
 @Composable
-internal fun MusicBusyIndicator(message: String) {
+internal fun MusicBusyIndicator(message: String, onCancel: (() -> Unit)? = null) {
     Column(
         Modifier.fillMaxWidth().padding(bottom = 14.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -286,7 +288,13 @@ internal fun MusicBusyIndicator(message: String) {
             modifier = Modifier.fillMaxWidth().height(3.dp).clip(CircleShape),
             color = MusicPalette.primary, trackColor = MusicPalette.border,
         )
-        Text(message, color = MusicPalette.muted, style = MaterialTheme.typography.labelMedium)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(message, color = MusicPalette.muted, style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.weight(1f))
+            if (onCancel != null) {
+                TextButton(onClick = onCancel) { Text("Annulla analisi") }
+            }
+        }
     }
 }
 
@@ -417,9 +425,12 @@ internal fun MusicPlaylistCard(
 
 @Composable
 internal fun MusicPlaylistHero(
-    name: String, trackCount: Int, available: Int,
-    busy: Boolean, onRelink: () -> Unit, onExport: () -> Unit,
+    name: String, trackCount: Int, available: Int, busy: Boolean,
+    analyzing: Boolean, needsVerification: Boolean, unreadableCount: Int,
+    missingTitles: List<String>,
+    onRelink: () -> Unit, onExport: () -> Unit,
 ) {
+    var expanded by remember(name) { mutableStateOf(false) }
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp), color = MusicPalette.surface,
@@ -429,7 +440,7 @@ internal fun MusicPlaylistHero(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     Modifier.size(58.dp).clip(RoundedCornerShape(17.dp))
-                        .background(Brush.linearGradient(listOf(Color(0xFF225D5C), Color(0xFF254052)))),
+                        .background(Brush.linearGradient(listOf(Color(0xFF5E341E), Color(0xFF30221B)))),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(Icons.Rounded.PlaylistPlay, contentDescription = null,
@@ -463,10 +474,31 @@ internal fun MusicPlaylistHero(
                     Text("Esporta", maxLines = 1)
                 }
             }
-            if (trackCount > available) {
-                Spacer(Modifier.height(9.dp))
-                Text((trackCount - available).toString() + " brani da verificare o mancanti",
+            if (analyzing || needsVerification || unreadableCount > 0) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    when {
+                        analyzing -> "Analisi in corso: verifica SHA-256 della libreria"
+                        unreadableCount > 0 -> "Da verificare: " + unreadableCount + " audio non leggibili. Riprova Ricollega."
+                        else -> "Da verificare · premi Ricollega per riprovare"
+                    },
+                    color = MusicPalette.warning, style = MaterialTheme.typography.labelMedium,
+                )
+            }
+            if (missingTitles.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                Text(missingTitles.size.toString() + " brani mancanti dopo la verifica",
                     color = MusicPalette.warning, style = MaterialTheme.typography.labelMedium)
+                val shown = if (expanded) missingTitles else missingTitles.take(3)
+                shown.forEach { title ->
+                    Text("• " + title, color = MusicPalette.muted,
+                        style = MaterialTheme.typography.bodySmall)
+                }
+                if (missingTitles.size > 3) {
+                    TextButton(onClick = { expanded = !expanded }) {
+                        Text(if (expanded) "Mostra meno" else "Mostra tutti i titoli mancanti")
+                    }
+                }
             }
         }
     }
@@ -475,6 +507,7 @@ internal fun MusicPlaylistHero(
 @Composable
 internal fun MusicPlaylistTrackRow(
     title: String, artist: String?, status: MatchStatus?,
+    analyzing: Boolean, verificationComplete: Boolean,
     playable: AudioFile?, cache: LocalArtworkCache,
     onPlay: () -> Unit, onRemove: () -> Unit,
 ) {
@@ -501,14 +534,15 @@ internal fun MusicPlaylistTrackRow(
                     style = MaterialTheme.typography.bodySmall, color = MusicPalette.muted,
                 )
                 Text(
-                    when (status) {
-                        MatchStatus.EXACT -> "Disponibile"
-                        MatchStatus.METADATA -> "Metadati"
-                        MatchStatus.REVIEW -> "Da verificare"
-                        MatchStatus.AMBIGUOUS -> "Ambiguo"
-                        else -> "Mancante"
+                    when (PlaylistVerification.display(status, analyzing, verificationComplete)) {
+                        VerificationDisplay.ANALYZING -> "Analisi in corso"
+                        VerificationDisplay.AVAILABLE -> "Disponibile"
+                        VerificationDisplay.REVIEW -> "Da verificare"
+                        VerificationDisplay.AMBIGUOUS -> "Ambiguo"
+                        VerificationDisplay.MISSING -> "Mancante"
                     },
-                    color = if (accessible) MusicPalette.primary else MusicPalette.warning,
+                    color = if (status == MatchStatus.EXACT && !analyzing)
+                        MusicPalette.primary else MusicPalette.warning,
                     style = MaterialTheme.typography.labelSmall,
                 )
             }
@@ -608,7 +642,7 @@ internal fun MusicNowPlaying(
     BoxWithConstraints(
         modifier.background(
             Brush.verticalGradient(
-                listOf(Color(0xFF172C35), MusicPalette.background, MusicPalette.background),
+                listOf(Color(0xFF382417), MusicPalette.background, MusicPalette.background),
             ),
         ),
     ) {

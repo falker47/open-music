@@ -7,6 +7,8 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
+import app.openmusic.core.AudioKindFlags
+import app.openmusic.core.AudioKindPolicy
 import app.openmusic.core.ContentDigest
 import app.openmusic.core.LocalCopy
 import app.openmusic.core.TrackIdentity
@@ -22,6 +24,7 @@ data class AudioFile(
     val sizeBytes: Long,
     val modifiedSeconds: Long,
     val source: String,
+    val isMusic: Boolean,
 ) {
     fun asCopy(hash: String? = null) = LocalCopy(uri, TrackIdentity(
         sha256 = hash,
@@ -37,46 +40,79 @@ object MediaLibrary {
     fun hasPermission(context: Context): Boolean =
         context.checkSelfPermission(permission()) == PackageManager.PERMISSION_GRANTED
 
-    /** Reads Android's local MediaStore audio index, not pCloud/Drive remote libraries. */
+    /** Always scan *all* local audio; filtering is only a UI presentation choice. */
     fun scan(context: Context): List<AudioFile> {
-        val columns = arrayOf(
-            MediaStore.Audio.Media._ID,
-            MediaStore.Audio.Media.TITLE,
-            MediaStore.Audio.Media.ARTIST,
-            MediaStore.Audio.Media.ALBUM,
-            MediaStore.Audio.Media.DURATION,
-            MediaStore.Audio.Media.DISPLAY_NAME,
-            MediaStore.Audio.Media.SIZE,
-            MediaStore.Audio.Media.DATE_MODIFIED,
+        val base = listOf(
+            MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE,
+            MediaStore.Audio.Media.ARTIST, MediaStore.Audio.Media.ALBUM,
+            MediaStore.Audio.Media.DURATION, MediaStore.Audio.Media.DISPLAY_NAME,
+            MediaStore.Audio.Media.SIZE, MediaStore.Audio.Media.DATE_MODIFIED,
         )
-        val audio = mutableListOf<AudioFile>()
-        context.contentResolver.query(
-            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-            columns, null, null, MediaStore.Audio.Media.TITLE + " COLLATE NOCASE ASC",
-        )?.use { cursor ->
-            val indices = columns.map(cursor::getColumnIndexOrThrow)
-            fun string(i: Int): String? = if (cursor.isNull(indices[i])) null else
-                cursor.getString(indices[i])?.trim()?.takeIf { it.isNotBlank() }
-            fun number(i: Int): Long = if (cursor.isNull(indices[i])) 0L else
-                cursor.getLong(indices[i])
-            while (cursor.moveToNext()) {
-                val id = number(0)
-                val fileName = string(5) ?: "audio-$id"
-                val title = string(1) ?: fileName.substringBeforeLast('.')
-                val artist = string(2)?.takeUnless { it == "<unknown>" }
-                val album = string(3)?.takeUnless { it == "<unknown>" }
-                val duration = number(4).takeIf { it > 0L }
-                val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
-                audio.add(AudioFile(
-                    uri.toString(), title, artist, album, duration, fileName,
-                    number(6), number(7), if (artist != null && string(1) != null) "tags" else "filename",
-                ))
-            }
+        val categories = buildList {
+            add(MediaStore.Audio.Media.IS_MUSIC)
+            add(MediaStore.Audio.Media.IS_PODCAST)
+            add(MediaStore.Audio.Media.IS_RINGTONE)
+            add(MediaStore.Audio.Media.IS_NOTIFICATION)
+            add(MediaStore.Audio.Media.IS_ALARM)
+            if (Build.VERSION.SDK_INT >= 29) add(MediaStore.Audio.Media.IS_AUDIOBOOK)
+            if (Build.VERSION.SDK_INT >= 31) add(MediaStore.Audio.Media.IS_RECORDING)
         }
-        return audio.sortedWith(compareBy({ it.title.lowercase() }, { it.artist.orEmpty().lowercase() }))
+        fun read(columns: List<String>): List<AudioFile> {
+            val audio = mutableListOf<AudioFile>()
+            context.contentResolver.query(
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                columns.toTypedArray(), null, null,
+                MediaStore.Audio.Media.TITLE + " COLLATE NOCASE ASC",
+            )?.use { cursor ->
+                fun string(column: String): String? {
+                    val i = cursor.getColumnIndex(column)
+                    return if (i < 0 || cursor.isNull(i)) null else
+                        cursor.getString(i)?.trim()?.takeIf { it.isNotBlank() }
+                }
+                fun number(column: String): Long {
+                    val i = cursor.getColumnIndex(column)
+                    return if (i < 0 || cursor.isNull(i)) 0L else cursor.getLong(i)
+                }
+                fun flag(column: String): Boolean? {
+                    val i = cursor.getColumnIndex(column)
+                    return if (i < 0 || cursor.isNull(i)) null else cursor.getInt(i) != 0
+                }
+                while (cursor.moveToNext()) {
+                    val id = number(MediaStore.Audio.Media._ID)
+                    val fileName = string(MediaStore.Audio.Media.DISPLAY_NAME) ?: "audio-$id"
+                    val rawTitle = string(MediaStore.Audio.Media.TITLE)
+                    val title = rawTitle ?: fileName.substringBeforeLast('.')
+                    val artist = string(MediaStore.Audio.Media.ARTIST)?.takeUnless { it == "<unknown>" }
+                    val album = string(MediaStore.Audio.Media.ALBUM)?.takeUnless { it == "<unknown>" }
+                    val duration = number(MediaStore.Audio.Media.DURATION).takeIf { it > 0L }
+                    val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
+                    val flags = AudioKindFlags(
+                        music = flag(MediaStore.Audio.Media.IS_MUSIC),
+                        podcast = flag(MediaStore.Audio.Media.IS_PODCAST),
+                        audiobook = if (Build.VERSION.SDK_INT >= 29)
+                            flag(MediaStore.Audio.Media.IS_AUDIOBOOK) else null,
+                        recording = if (Build.VERSION.SDK_INT >= 31)
+                            flag(MediaStore.Audio.Media.IS_RECORDING) else null,
+                        ringtone = flag(MediaStore.Audio.Media.IS_RINGTONE),
+                        notification = flag(MediaStore.Audio.Media.IS_NOTIFICATION),
+                        alarm = flag(MediaStore.Audio.Media.IS_ALARM),
+                    )
+                    audio.add(AudioFile(
+                        uri.toString(), title, artist, album, duration, fileName,
+                        number(MediaStore.Audio.Media.SIZE),
+                        number(MediaStore.Audio.Media.DATE_MODIFIED),
+                        if (artist != null && rawTitle != null) "tags" else "filename",
+                        AudioKindPolicy.likelyMusic(flags, artist, album),
+                    ))
+                }
+            }
+            return audio.sortedWith(compareBy({ it.title.lowercase() }, { it.artist.orEmpty().lowercase() }))
+        }
+        // Older/OEM MediaStore implementations can reject one optional column.
+        return try { read(base + categories) } catch (_: IllegalArgumentException) { read(base) }
     }
 
-    /** Full-file hashing is deliberate and only runs in a worker coroutine, never on the UI thread. */
+    /** Invoked only from Dispatchers.IO. */
     fun sha256(context: Context, audio: AudioFile): String {
         val stream = context.contentResolver.openInputStream(Uri.parse(audio.uri))
             ?: throw IllegalStateException("Brano non accessibile")
