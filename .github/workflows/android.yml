@@ -1,0 +1,152 @@
+name: Android build and core tests
+
+on:
+  push:
+    branches: [main, "feat/**", "fix/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Android SDK
+        uses: android-actions/setup-android@v4
+      - name: Android API 36
+        run: sdkmanager "platforms;android-36" "build-tools;35.0.0"
+      - name: Gradle 8.13
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Test core and assemble ordinary debug APK
+        run: gradle :core:test :app:assembleDebug --no-daemon --stacktrace
+
+      # PRs and runs without the owner's key exercise the QA variant with an
+      # ephemeral certificate, but NEVER publish those incompatible APKs.
+      # The single repository secret is available only to the trusted push job.
+      - name: Check persistent QA signing availability
+        id: qa_signing
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/feat/')
+        env:
+          OPEN_MUSIC_QA_SIGNING: ${{ secrets.OPEN_MUSIC_QA_SIGNING }}
+        shell: bash
+        run: |
+          if [[ -n "$OPEN_MUSIC_QA_SIGNING" ]]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Public QA release is held until stable QA signing is configured."
+          fi
+
+      - name: Exercise QA build with disposable CI-only key (never published)
+        if: steps.qa_signing.outputs.ready != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          export OPEN_MUSIC_QA_KEYSTORE_PATH="$RUNNER_TEMP/disposable-ci-qa.p12"
+          export OPEN_MUSIC_QA_KEY_PASSWORD="CI-only-do-not-reuse-2026"
+          keytool -genkeypair -noprompt -storetype PKCS12 \
+            -keystore "$OPEN_MUSIC_QA_KEYSTORE_PATH" \
+            -storepass "$OPEN_MUSIC_QA_KEY_PASSWORD" \
+            -alias openmusic-qa -keypass "$OPEN_MUSIC_QA_KEY_PASSWORD" \
+            -keyalg RSA -keysize 3072 -validity 1 -dname "CN=CI disposable QA"
+          gradle :app:assembleQa --no-daemon --stacktrace
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify \
+            "app/build/outputs/apk/qa/app-qa.apk"
+
+      - name: Prepare persistent QA keystore without exposing credentials
+        if: steps.qa_signing.outputs.ready == 'true'
+        env:
+          OPEN_MUSIC_QA_SIGNING: ${{ secrets.OPEN_MUSIC_QA_SIGNING }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          import json
+          import os
+          from pathlib import Path
+
+          data = json.loads(os.environ["OPEN_MUSIC_QA_SIGNING"])
+          if set(data) != {"keystoreBase64", "password"}:
+              raise ValueError("Expected keystoreBase64 and password")
+          password = data["password"]
+          if not isinstance(password, str) or len(password) < 16 or any(
+              char in password for char in "\r\n\x00"
+          ):
+              raise ValueError("Invalid QA password")
+          raw = base64.b64decode(data["keystoreBase64"], validate=True)
+          if not (1000 <= len(raw) <= 30000):
+              raise ValueError("Unexpected QA keystore size")
+          path = Path(os.environ["RUNNER_TEMP"]) / "open-music-stable-qa.p12"
+          path.write_bytes(raw)
+          path.chmod(0o600)
+          print("::add-mask::" + password)
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
+              env.write("OPEN_MUSIC_QA_KEYSTORE_PATH=" + str(path) + "\n")
+              env.write("OPEN_MUSIC_QA_KEY_PASSWORD=" + password + "\n")
+          PY
+
+      - name: Assemble and verify stable-signed QA APK
+        if: steps.qa_signing.outputs.ready == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle :app:assembleQa --no-daemon --stacktrace
+          APK="app/build/outputs/apk/qa/app-qa.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs \
+            "$APK" | tee "$RUNNER_TEMP/qa-certificate.txt"
+          grep -q 'Signer #1 certificate SHA-1 digest:' "$RUNNER_TEMP/qa-certificate.txt"
+          sha256sum "$APK"
+          # This text contains a PUBLIC certificate fingerprint, not the private key.
+          printf 'Package: app.openmusic\nCommit: %s\n' "$GITHUB_SHA" \
+            > "$RUNNER_TEMP/qa-signing-info.txt"
+          grep 'Signer #1 certificate SHA-1 digest:' "$RUNNER_TEMP/qa-certificate.txt" \
+            >> "$RUNNER_TEMP/qa-signing-info.txt"
+
+      # GitHub Actions artifacts exceed the account's quota. Releases are the
+      # public test channel. Publish only a *stable-signed* APK (no fallback).
+      - name: Publish signed QA public prerelease
+        if: steps.qa_signing.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="qa-${GITHUB_SHA:0:12}"
+          APK="app/build/outputs/apk/qa/app-qa.apk"
+          INFO="$RUNNER_TEMP/qa-signing-info.txt"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            if ! gh release view "$TAG" --json assets --jq '.assets[].name' | grep -Fxq 'app-qa.apk'; then
+              gh release upload "$TAG" "$APK"
+            fi
+            if ! gh release view "$TAG" --json assets --jq '.assets[].name' | grep -Fxq 'qa-signing-info.txt'; then
+              gh release upload "$TAG" "$INFO#qa-signing-info.txt"
+            fi
+          else
+            gh release create "$TAG" "$APK" "$INFO#qa-signing-info.txt" \
+              --prerelease --target "$GITHUB_SHA" \
+              --title "Open Music stable-signed QA $TAG" \
+              --notes "Public Android QA only, signed with the persistent QA certificate (not production). OAuth/device-to-device sync still requires a Google Cloud Android OAuth client and live QA. The public certificate SHA-1 is in qa-signing-info.txt. No audio is uploaded. No Play Store or main merge."
+          fi
+          gh release view "$TAG" --json url,isDraft,isPrerelease,assets \
+            --jq '{url, isDraft, isPrerelease, assetNames: [.assets[].name]}'
+          test "$(gh release view "$TAG" --json assets --jq '[.assets[].name | select(. == "app-qa.apk")] | length')" = "1"
+          test "$(gh release view "$TAG" --json assets --jq '[.assets[].name | select(. == "qa-signing-info.txt")] | length')" = "1"
