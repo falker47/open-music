@@ -123,4 +123,35 @@ class CloudSyncPlannerTest {
                 mergedHistory).action)
     }
 
+    @Test fun interruptedRemoteConflictMergeReplaysDownloadInsteadOfStaleUpload() {
+        val otherHead = root.copy(
+            revisionId = "rev-b", parents = listOf("rev-a"), playlistDigest = "remote-b",
+        )
+        val concurrentHead = root.copy(
+            revisionId = "rev-c", parents = listOf("rev-a"), playlistDigest = "remote-c",
+        )
+        val merged = root.copy(
+            revisionId = "rev-d", parents = listOf("rev-b", "rev-c"),
+            playlistDigest = "remote-c",
+        )
+        val history = listOf(root, otherHead, concurrentHead, merged)
+
+        // Remote upload succeeded but local playlist replacement crashed.
+        // With the old, *durable* checkpoint, restarting must pull the
+        // selected cloud head; no fresh revision should upload stale data.
+        assertEquals(CloudSyncAction.DOWNLOAD,
+            decide("hash-a", checkpoint, history).action)
+
+        // This is the regression the coordinator must avoid: acknowledging
+        // the uploaded head prematurely would interpret the same old local
+        // playlist as a new edit and upload it back over the resolution.
+        assertEquals(CloudSyncAction.UPLOAD,
+            decide("hash-a", CloudCheckpoint("rev-d", "remote-c"), history).action)
+
+        // If the atomic local replacement committed but the journal did not,
+        // the next sync adopts the existing remote head without re-upload.
+        assertEquals(CloudSyncAction.ADOPT,
+            decide("remote-c", checkpoint, history).action)
+    }
+
 }

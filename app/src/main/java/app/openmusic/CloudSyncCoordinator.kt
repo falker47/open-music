@@ -158,6 +158,11 @@ internal class CloudSyncCoordinator(context: Context) {
         var downloaded = 0
         var adopted = 0
         val checkpoints = journal.checkpoints.toMutableMap()
+        // A remote conflict merge is not acknowledged until its chosen
+        // playlist has been durably saved. Otherwise, a crash after upload
+        // but before local.save() makes the stale local copy look like a
+        // new edit and silently re-uploads it on the next manual sync.
+        val pendingMergeAcks = mutableMapOf<String, CloudCheckpoint>()
 
         // Append-only uploads. Ambiguous request outcomes converge by digest on retry.
         works.forEach { task ->
@@ -177,9 +182,16 @@ internal class CloudSyncCoordinator(context: Context) {
                     CloudSnapshotCodec.metadata(revision).toString(),
                     CloudSnapshotCodec.encode(revision, playlist))
                 uploaded++
-                checkpoints[task.playlistId] = CloudCheckpoint(revision.revisionId,
-                    revision.playlistDigest)
-                journalStore.save(CloudJournal(journal.binding, checkpoints))
+                val ack = CloudCheckpoint(revision.revisionId, revision.playlistDigest)
+                if (mergeRemote) {
+                    // Remote snapshot exists, but local replacement is still
+                    // pending. A retry with the old checkpoint downloads the
+                    // merged head instead of uploading stale local state.
+                    pendingMergeAcks[task.playlistId] = ack
+                } else {
+                    checkpoints[task.playlistId] = ack
+                    journalStore.save(CloudJournal(journal.binding, checkpoints))
+                }
             }
         }
 
@@ -213,6 +225,9 @@ internal class CloudSyncCoordinator(context: Context) {
             }
         }
         if (downloaded > 0) local.save(merged)
+        // Only after the atomic local write may the new remote merge head
+        // become the acknowledged baseline for subsequent local edits.
+        checkpoints.putAll(pendingMergeAcks)
         journalStore.save(CloudJournal(journal.binding, checkpoints))
         return CloudSyncOutcome(merged, uploaded = uploaded,
             downloaded = downloaded, adopted = adopted)
