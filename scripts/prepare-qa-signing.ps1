@@ -23,24 +23,39 @@ $password = [System.Net.NetworkCredential]::new('', $securePassword).Password
 if ($password.Length -lt 16 -or $password.Contains([char]10) -or $password.Contains([char]13)) {
     throw 'Password must have at least 16 characters and no newlines.'
 }
-if (-not $existing) {
-    & $tool -genkeypair -noprompt -storetype PKCS12 -keystore $path `
-        -storepass $password -alias 'openmusic-qa' -keypass $password `
-        -keyalg RSA -keysize 3072 -validity 3650 `
-        -dname 'CN=Open Music QA, OU=QA, O=Open Music'
-    if ($LASTEXITCODE -ne 0) { throw 'Could not create the QA keystore.' }
+# Java keytool supports the :env modifier for password arguments.
+# The password is available only to this process and child keytool processes,
+# never as plain text in their command lines. It is still sensitive in memory.
+$env:OPEN_MUSIC_QA_KEYTOOL_PASSWORD = $password
+try {
+    if (-not $existing) {
+        & $tool -genkeypair -noprompt -storetype PKCS12 -keystore $path `
+            -storepass:env OPEN_MUSIC_QA_KEYTOOL_PASSWORD `
+            -alias 'openmusic-qa' -keypass:env OPEN_MUSIC_QA_KEYTOOL_PASSWORD `
+            -keyalg RSA -keysize 3072 -validity 3650 `
+            -dname 'CN=Open Music QA, OU=QA, O=Open Music'
+        if ($LASTEXITCODE -ne 0) { throw 'Could not create the QA keystore.' }
+    }
+    $certificate = & $tool -list -v -storetype PKCS12 -keystore $path `
+        -storepass:env OPEN_MUSIC_QA_KEYTOOL_PASSWORD -alias 'openmusic-qa' 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw 'QA keystore/password check failed; nothing copied.'
+    }
+
+    # Keep the payload in the local clipboard only; never print it or write it
+    # into the repository. Clear the clipboard manually after setting the secret.
+    $payload = @{
+        keystoreBase64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($path))
+        password = $password
+    } | ConvertTo-Json -Compress
+    Set-Clipboard -Value $payload
+    Write-Host "QA key preserved: $path"
+    Write-Host 'Paste the clipboard payload ONLY into the GitHub Actions repository secret OPEN_MUSIC_QA_SIGNING.'
+    Write-Host 'Then clear the clipboard and back up the password-protected .p12 separately.'
+    Write-Host 'Verify you can retrieve both the backup file and its password before proceeding.'
+    $certificate | Select-String -Pattern 'SHA1:'
+} finally {
+    Remove-Item Env:OPEN_MUSIC_QA_KEYTOOL_PASSWORD -ErrorAction SilentlyContinue
+    $password = $null
+    $payload = $null
 }
-$certificate = & $tool -list -v -storetype PKCS12 -keystore $path `
-    -storepass $password -alias 'openmusic-qa' 2>&1
-if ($LASTEXITCODE -ne 0) { throw 'QA keystore/password check failed; nothing copied.' }
-$payload = @{
-    keystoreBase64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($path))
-    password = $password
-} | ConvertTo-Json -Compress
-Set-Clipboard -Value $payload
-Write-Host "QA key preserved: $path"
-Write-Host 'The secret payload is in the clipboard. Paste it ONLY into GitHub Actions secret OPEN_MUSIC_QA_SIGNING.'
-Write-Host 'Keep an encrypted backup of the .p12 and its password; losing them breaks stable QA upgrades.'
-$certificate | Select-String -Pattern 'SHA1:'
-$password = $null
-$payload = $null
