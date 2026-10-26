@@ -823,7 +823,7 @@ private fun OpenMusicApp() {
                                     enabled = busy.isEmpty(),
                                     modifier = Modifier.heightIn(min = 48.dp),
                                 ) {
-                                    Icon(androidx.compose.material.icons.Icons.Rounded.FileUpload,
+                                    Icon(androidx.compose.material.icons.Icons.Rounded.FileDownload,
                                         contentDescription = null, modifier = Modifier.size(20.dp))
                                     Spacer(Modifier.width(3.dp))
                                     Text("Importa")
@@ -903,6 +903,8 @@ private fun OpenMusicApp() {
                                         ?: entry.identity.filenameHint ?: "Brano"
                                     MusicPlaylistTrackRow(
                                         title = title, artist = entry.identity.metadata.artist,
+                                        durationMs = playable?.durationMs
+                                            ?: entry.identity.metadata.durationMs,
                                         status = resolution?.status, playable = playable,
                                         analyzing = verifying,
                                         verificationComplete = verificationComplete,

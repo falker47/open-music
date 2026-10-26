@@ -383,11 +383,19 @@ internal fun MusicTrackRow(
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(3.dp))
-                Text(
-                    file.artist?.takeIf { it.isNotBlank() } ?: "Artista sconosciuto",
-                    color = MusicPalette.muted, style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        file.artist?.takeIf { it.isNotBlank() } ?: "Artista sconosciuto",
+                        modifier = Modifier.weight(1f), color = MusicPalette.muted,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                    file.durationMs?.takeIf { it > 0L }?.let { duration ->
+                        Spacer(Modifier.width(8.dp))
+                        Text(formatMusicTime(duration), color = MusicPalette.muted,
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                }
             }
         }
         IconButton(onClick = onToggleMusic, modifier = Modifier.size(48.dp)) {
@@ -440,11 +448,13 @@ internal fun MusicPlaylistSummary(
                         contentDescription = "Ricollega playlist " + name,
                         tint = MusicPalette.primary)
                 }
-                IconButton(onClick = onExport, enabled = !busy,
-                    modifier = Modifier.size(48.dp)) {
-                    Icon(Icons.Rounded.FileDownload,
-                        contentDescription = "Esporta playlist " + name,
-                        tint = MusicPalette.primary)
+                TextButton(onClick = onExport, enabled = !busy,
+                    modifier = Modifier.heightIn(min = 48.dp),
+                    contentPadding = PaddingValues(horizontal = 6.dp)) {
+                    Icon(Icons.Rounded.FileUpload, contentDescription = null,
+                        tint = MusicPalette.primary, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Esporta", maxLines = 1)
                 }
             }
             if (unreadableCount > 0 && !analyzing) {
@@ -476,7 +486,7 @@ internal fun MusicPlaylistSummary(
 
 @Composable
 internal fun MusicPlaylistTrackRow(
-    title: String, artist: String?, status: MatchStatus?,
+    title: String, artist: String?, durationMs: Long?, status: MatchStatus?,
     analyzing: Boolean, verificationComplete: Boolean,
     playable: AudioFile?, cache: LocalArtworkCache,
     onPlay: () -> Unit, onRemove: () -> Unit,
@@ -498,11 +508,19 @@ internal fun MusicPlaylistTrackRow(
                     style = MaterialTheme.typography.titleMedium,
                     color = if (accessible) MusicPalette.text else MusicPalette.muted)
                 Spacer(Modifier.height(3.dp))
-                Text(
-                    artist?.takeIf { it.isNotBlank() } ?: "Artista sconosciuto",
-                    maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodySmall, color = MusicPalette.muted,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        artist?.takeIf { it.isNotBlank() } ?: "Artista sconosciuto",
+                        modifier = Modifier.weight(1f), maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodySmall, color = MusicPalette.muted,
+                    )
+                    durationMs?.takeIf { it > 0L }?.let { duration ->
+                        Spacer(Modifier.width(8.dp))
+                        Text(formatMusicTime(duration), color = MusicPalette.muted,
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                }
                 Text(
                     when (PlaylistVerification.display(status, analyzing, verificationComplete)) {
                         VerificationDisplay.ANALYZING -> "Analisi in corso"

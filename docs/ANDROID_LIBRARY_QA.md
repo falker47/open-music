@@ -43,3 +43,11 @@ Existing background playback QA cases remain separate.
 2. Promote an item from Altri audio to Musica and demote one in the opposite direction. Confirm title-bearing Snackbar only after successful save; test Annulla, full restart and rescan. Files must never move or be deleted.
 3. Compare automatic classification of actual voice notes, recordings, podcasts, ringtones, notifications, music in Music folders without artist tags, tagged downloads, messenger-shared songs and a song whose title contains "Voice". Report false positives/negatives without sending private recordings.
 4. Import a portable JSON v1 playlist that references content shown in Altri audio; all local audio must still participate in SHA matching. Keep prior QA open: cold/warm cache, selective invalidation, renamed/moved audio, EXACT/MISSING/AMBIGUOUS, persistence and media controls. CI does not imply real-device PASS.
+
+## Follow-up QA — observed 26 October 2026 16:22–16:24, build qa-27b214524726
+
+Real-device screenshots: after first start the app showed empty playlists; the Rock playlist later contained 4/4 available tracks with a reported scan of 23,876 ms, 795 freshly computed SHA-256 and 0 cached for 795 audio. The library showed 779/795 Musica and 16/795 Altri audio; 7 Years, Cheap Thrills and Come with artist/artwork appeared among Altri audio while anonymous audio names remained in Musica. These are **observations**, not verified causes or proof of all matching states.
+
+Next iteration check: Importa must show a down arrow, Esporta an up arrow **and visible label**; playlist actions remain usable with long names and large text. Verify the displayed duration for library and playlist audio when known, without using duration as a mandatory music classifier threshold.
+
+Compare the actual tracks above under the new scored MediaStore + embedded-metadata policy. Report any remaining incorrect categories, presence of media artwork, and whether each file had been manually overridden; avoid sharing private audio. Verify manual corrections persist after restart and rescans, never modify files, and never remove candidates from SHA-256 matching. Track cold/warm overall scanning latency (metadata enrichment may add overhead), permission cases and all earlier unverified QA gates. Cloud remains a technical **proposal only**, with no provider connection in this build.
