@@ -66,18 +66,14 @@ jobs:
         if: github.event_name == 'push' && env.QA_SIGNING_READY == 'true'
         run: |
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs app/build/outputs/apk/debug/app-debug.apk
-      # Private QA releases only: a public repository or missing key must NOT
-      # publish an update that could force uninstall and erase playlists.
-      - name: Publish private signed QA prerelease
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/feat/') && github.event.repository.private == true && env.QA_SIGNING_READY == 'true'
+      # Open Music stays public. The only publication gate is persistent
+      # owner-controlled signing; never expose keys in public release assets.
+      - name: Publish public signed QA prerelease
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/feat/') && env.QA_SIGNING_READY == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if [[ "$(gh repo view "$GITHUB_REPOSITORY" --json isPrivate --jq .isPrivate)" != "true" ]]; then
-            echo "::error::Repository must remain private for QA distribution."
-            exit 1
-          fi
           TAG="qa-${GITHUB_SHA:0:12}"
           FILE="app/build/outputs/apk/debug/app-debug.apk"
           if gh release view "$TAG" >/dev/null 2>&1; then
@@ -85,6 +81,6 @@ jobs:
               gh release upload "$TAG" "$FILE"
             fi
           else
-            gh release create "$TAG" "$FILE" --prerelease --target "$GITHUB_SHA" --title "Open Music signed QA $TAG" --notes "Private Android QA APK. Signed with the persistent owner-owned QA key. Export playlists before any unavoidable one-time signer migration. No store publication."
+            gh release create "$TAG" "$FILE" --prerelease --target "$GITHUB_SHA" --title "Open Music signed QA $TAG" --notes "Public experimental open-source QA APK. Signed with the persistent owner-controlled QA key. Export playlists before any necessary one-time signer migration. No store publication."
           fi
           gh release view "$TAG" --json url,isDraft,isPrerelease,assets --jq '{url, isDraft, isPrerelease, assetNames: [.assets[].name]}'

@@ -32,21 +32,28 @@ Android-first, local-first music player with portable playlists independent of f
 - Playlist format: v1 JSON compatible with the Python POC provided on 24 October 2026.
 - CI: GitHub Actions, Gradle 8.13, Android Gradle Plugin 8.11.1, JDK 17.
 
+## Open source
+
+Open Music is a **public, open-source project licensed under [MIT](LICENSE)**.
+The source is available for use, modification and contributions. QA prereleases
+are also public and experimental, not stable or Play Store releases.
+
 ## Getting a QA APK
 
-QA distribution now has two mandatory gates: the repository must be **private**
-and the owner must configure a **persistent QA signing certificate** using GitHub
-Actions secrets (see [Android QA instructions](docs/ANDROID_MEDIA_QA.md)).
-GitHub Actions still compile and test debug builds without those secrets, but
-**will not publish a new QA APK**. Previous public debug APKs may have different
-GitHub runner certificates; Android then rejects an in-place upgrade. Do not
-uninstall an older APK to work around a signature mismatch until playlists
-have been exported to portable JSON v1. A backup is essential before the first
-stable-key migration; no automatic recovery of lost app-private files is promised.
+GitHub Actions compile and test each candidate. For feature-branch pushes, the
+workflow publishes a **public experimental QA prerelease** once the owner
+configures a **persistent QA signing key** in GitHub Actions secrets (see
+[Android QA instructions](docs/ANDROID_MEDIA_QA.md)). Public repository
+visibility is intentional and never blocks releases; private signing keys stay
+outside the source code, build artifacts and APK assets.
 
-The source repository was public at the time this guard was added. Its
-visibility must be checked live before distribution. PR #1 remains draft;
-nothing here publishes to the Play Store or authorizes a merge.
+When the secrets are missing, compilation and tests run but no APK is released:
+a fresh GitHub runner debug certificate would risk incompatible updates.
+Older QA APKs may have been signed using a different certificate, so Android
+can reject an in-place update. **Export existing playlists to JSON v1 before
+any required uninstall.** Uninstalled application-private data cannot be
+restored automatically. PR #1 remains draft; no merge to `main` or store
+publication is implied.
 
 Android Studio can import this Gradle project. In CI we use the pinned Gradle distribution (no unverified Gradle wrapper binary is committed):
 

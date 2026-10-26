@@ -37,7 +37,7 @@ Existing JSON v1, local-only scanning, playlist persistence rules, matching/anti
 
 ## Stable QA signing gate (no key in source)
 
-The push workflow always compiles/tests. It publishes a QA prerelease **only when the repository is private and all four GitHub Actions secrets are available**:
+The push workflow always compiles/tests. The repository remains **public and open source**. A **public experimental QA prerelease** is published when all four GitHub Actions signing secrets are available:
 `OPEN_MUSIC_QA_KEYSTORE_B64` (base64 of a user-owned, securely backed-up JKS),
 `OPEN_MUSIC_QA_STORE_PASSWORD`, `OPEN_MUSIC_QA_KEY_ALIAS`, and `OPEN_MUSIC_QA_KEY_PASSWORD`.
-The keystore is reconstructed into runner temporary storage, not committed or uploaded as a build artifact. Preserve it long term: losing the key requires a new migration. The old GitHub default debug certificate cannot be assumed equal to the new key. CI PASS without a released signed APK is **not** an on-device PASS. GitHub Actions artifacts remain disabled due to quota.
+The keystore is reconstructed into runner temporary storage, not committed or uploaded as a build artifact. GitHub Actions secrets are not exposed to public readers of the repository. Preserve the owner-controlled key long term; losing it requires another signing migration. The old GitHub default debug certificate cannot be assumed equal to the new key. CI PASS without a released signed APK is **not** an on-device PASS. GitHub Actions artifacts remain disabled due to quota. No repository privacy gate is required.
