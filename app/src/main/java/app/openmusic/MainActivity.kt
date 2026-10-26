@@ -46,6 +46,9 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import app.openmusic.core.*
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -151,51 +154,86 @@ private fun OpenMusicApp() {
         resolvedMatches = results
     }
 
-    suspend fun reconcile(found: List<AudioFile>, reason: String = "scansione") {
+    suspend fun reconcile(
+        found: List<AudioFile>,
+        reason: String = "scansione",
+        indexingMs: Long = 0L,
+    ) {
         verifying = true
         verificationComplete = false
         unreadableCount = 0
         resolvedMatches = emptyMap()
         val fresh = ArrayList<LocalCopy>(found.size)
         val hints = ReconcilePriority.hints(playlists)
-        // Metadata only schedules the first candidates. Every file is SHA-checked
-        // before a missing result can be considered final.
+        // Metadata only schedules candidates first. It cannot force a match.
+        // Remaining audio is always included if any playlist match is unresolved.
         val ordered = found.sortedByDescending {
             ReconcilePriority.score(it.asCopy().identity, hints)
         }
         var unreadable = 0
         var reused = 0
         var recomputed = 0
+        var checked = 0
+        var digestWallMs = 0L
+        var matchingWallMs = 0L
+        var exactCoverage = false
         val started = android.os.SystemClock.elapsedRealtime()
         try {
-            for ((index, audio) in ordered.withIndex()) {
-                val digest = try {
-                    hashCache.digest(audio)
-                } catch (cancel: CancellationException) {
-                    throw cancel
-                } catch (_: Exception) {
-                    unreadable++
-                    null
+            for (batch in ordered.chunked(24)) {
+                val hashStarted = android.os.SystemClock.elapsedRealtime()
+                // Bound memory and structured child lifetimes to one small batch.
+                // MediaHashCache limits physical content readers to two.
+                val results = coroutineScope {
+                    batch.map { audio ->
+                        async(Dispatchers.IO) {
+                            val result = try {
+                                hashCache.digest(audio)
+                            } catch (cancel: CancellationException) {
+                                throw cancel
+                            } catch (_: Exception) {
+                                null
+                            }
+                            audio to result
+                        }
+                    }.awaitAll()
                 }
-                if (digest?.reused == true) reused++
-                else if (digest != null) recomputed++
-                fresh.add(audio.asCopy(digest?.hash))
-                // Indexed matching runs off the main thread. Publish verified
-                // matches progressively; never publish provisional MISSING.
-                if ((index + 1) % 24 == 0 || index == ordered.lastIndex) {
-                    localCopies = fresh.toList()
-                    refreshMatches(playlists, localCopies)
-                    busy = "Verifica SHA-256 · " + (index + 1) + "/" + ordered.size +
-                        " · cache " + reused
+                digestWallMs += android.os.SystemClock.elapsedRealtime() - hashStarted
+                for ((audio, digest) in results) {
+                    if (digest?.reused == true) reused++
+                    else if (digest != null) recomputed++ else unreadable++
+                    fresh.add(audio.asCopy(digest?.hash))
+                }
+                checked += batch.size
+                localCopies = fresh.toList()
+                val matchingStarted = android.os.SystemClock.elapsedRealtime()
+                refreshMatches(playlists, localCopies)
+                matchingWallMs += android.os.SystemClock.elapsedRealtime() - matchingStarted
+                busy = "Verifica SHA-256 · " + checked + "/" + ordered.size +
+                    " · cache " + reused
+
+                // VERIFIED EXACT needs only one identical byte-for-byte copy.
+                // If every entry in every playlist has one, no unexamined file can
+                // turn it into a MISSING/REVIEW/AMBIGUOUS. Stop early safely.
+                if (ReconcileCompleteness.allExact(playlists, resolvedMatches)) {
+                    exactCoverage = true
+                    break
                 }
             }
-            localCopies = fresh.toList()
-            refreshMatches(playlists, localCopies)
+            // Also update an empty inventory so MISSING is final when covered.
+            if (ordered.isEmpty()) {
+                localCopies = emptyList()
+                refreshMatches(playlists, localCopies)
+            }
             unreadableCount = unreadable
-            verificationComplete = unreadable == 0
+            val scannedAll = checked == found.size
+            verificationComplete = exactCoverage || (scannedAll && unreadable == 0)
             val elapsed = android.os.SystemClock.elapsedRealtime() - started
-            latestAnalysis = reason + ": " + elapsed + " ms · " +
-                recomputed + " hash ricalcolati · " + reused + " dalla cache / " + found.size
+            latestAnalysis = reason + ": " + (elapsed + indexingMs) +
+                " ms · " + recomputed + " hash ricalcolati · " + reused +
+                " dalla cache / " + checked + " verificati su " + found.size +
+                if (exactCoverage && !scannedAll) " · playlist già tutte EXACT" else ""
+            latestAnalysis += "\nLibreria " + indexingMs + " ms · SHA " +
+                digestWallMs + " ms · matching " + matchingWallMs + " ms"
             val current = playlists.firstOrNull { it.playlistId == selectedId }
             val matched = current?.let { resolvedMatches[it.playlistId].orEmpty() }
                 ?.count { it.status == MatchStatus.EXACT } ?: 0
@@ -206,9 +244,11 @@ private fun OpenMusicApp() {
                 notifyUser("Analisi completata con " + unreadable + " audio non leggibili")
             }
         } finally {
-            // Save a partial warm cache even when the user cancels halfway.
+            // Persist a partial safe cache even on explicit cancellation.
             try { withContext(NonCancellable) { hashCache.flush() } }
-            catch (_: Exception) { notifyUser("Cache SHA non salvata: la prossima analisi potrebbe rallentare") }
+            catch (_: Exception) {
+                notifyUser("Cache SHA non salvata: la prossima analisi potrebbe rallentare")
+            }
             verifying = false
         }
     }
@@ -218,7 +258,9 @@ private fun OpenMusicApp() {
         busy = "Lettura di tutti gli audio locali"
         analysisJob = scope.launch {
             try {
+                val indexingStarted = android.os.SystemClock.elapsedRealtime()
                 val found = withContext(Dispatchers.IO) { MediaLibrary.scan(context) }
+                val indexingMs = android.os.SystemClock.elapsedRealtime() - indexingStarted
                 // Retain unchanged MediaStore identities across scans and app restarts.
                 hashCache.prepareForScan(found)
                 kindWriteMutex.withLock {
@@ -235,10 +277,12 @@ private fun OpenMusicApp() {
                 verificationComplete = false
                 unreadableCount = 0
                 if (playlists.any { it.tracks.isNotEmpty() }) {
-                    reconcile(found)
+                    reconcile(found, indexingMs = indexingMs)
                 } else {
                     verificationComplete = true
                     hashCache.flush()
+                    latestAnalysis = "Libreria: " + indexingMs + " ms · " +
+                        found.size + " audio (nessuna playlist da verificare)"
                     notifyUser("Indicizzati " + found.size + " file audio")
                 }
             } catch (cancel: CancellationException) {
@@ -368,9 +412,7 @@ private fun OpenMusicApp() {
                     val list = playlists.firstOrNull { it.playlistId == listId }
                         ?: throw IllegalStateException("Playlist non trovata")
                     val identity = file.asCopy(hash).identity
-                    localCopies = localCopies.map {
-                        if (it.uri == file.uri) file.asCopy(hash) else it
-                    }
+                    localCopies = VerifiedCopies.upsert(localCopies, file.asCopy(hash))
                     // The final read/modify/write is serialized, even on repeated taps.
                     val next = PlaylistRouting.addIfAbsent(
                         list,
@@ -567,9 +609,7 @@ private fun OpenMusicApp() {
                 val hash = hashCache.sha256(file)
                 pendingHash = hash
                 hashCache.flush()
-                localCopies = localCopies.map {
-                    if (it.uri == file.uri) file.asCopy(hash) else it
-                }
+                localCopies = VerifiedCopies.upsert(localCopies, file.asCopy(hash))
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (failure: Exception) {
@@ -1022,7 +1062,7 @@ private fun OpenMusicApp() {
                                 )
                             }
                             if (latestAnalysis.isNotEmpty()) item {
-                                Text(latestAnalysis, color = Muted, maxLines = 1,
+                                Text(latestAnalysis, color = Muted, maxLines = 2,
                                     overflow = TextOverflow.Ellipsis,
                                     style = MaterialTheme.typography.labelSmall)
                             }

@@ -12,6 +12,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -31,6 +33,12 @@ internal class MediaHashCache(private val context: Context) {
     private data class Cached(val fingerprint: DigestFingerprint, val hash: String)
     private val storage = AtomicFile(File(context.filesDir, "open-music-media-sha256.json"))
     private val mutex = Mutex()
+    // Only cache-map and AtomicFile operations need the global mutex. Hashing
+    // bytes while holding it accidentally serialized the entire 795-file scan.
+    // Two readers bound I/O pressure on mobile storage.
+    private val readGate = Semaphore(2)
+    // Stripes prevent a manual add racing a library scan for the same URI.
+    private val uriLocks = Array(64) { Mutex() }
     private val cached = mutableMapOf<String, Cached>()
     private var loaded = false
     private var dirty = 0
@@ -137,44 +145,67 @@ internal class MediaHashCache(private val context: Context) {
 
     suspend fun digest(file: AudioFile): DigestResult = withContext(Dispatchers.IO) {
         val job = currentCoroutineContext()[Job]
-        mutex.withLock {
-            loadLocked()
-            val before = fingerprint(file.uri)
-            val old = cached[file.uri]
-            if (old != null && before != null &&
-                before.sizeBytes == file.sizeBytes &&
-                before.modifiedSeconds == file.modifiedSeconds &&
-                HashReusePolicy.reusable(old.fingerprint, before)) {
-                return@withLock DigestResult(old.hash, true)
-            }
-
-            // The scan may have changed, or this provider lacks reliable generation.
-            if (cached.remove(file.uri) != null) dirty++
-            val md = MessageDigest.getInstance("SHA-256")
-            val stream = context.contentResolver.openInputStream(Uri.parse(file.uri))
-                ?: throw IOException("Audio non accessibile")
-            stream.use { input ->
-                val buffer = ByteArray(64 * 1024)
-                while (true) {
+        readGate.withPermit {
+            val lock = uriLocks[(file.uri.hashCode() and Int.MAX_VALUE) % uriLocks.size]
+            lock.withLock {
+                // Recheck the item at the moment of use; unchanged URI alone never
+                // validates a stale cached hash. The provider version/generation
+                // safeguards are deliberately unchanged.
+                val before = fingerprint(file.uri)
+                val old = mutex.withLock {
+                    loadLocked()
+                    cached[file.uri]
+                }
+                if (old != null && before != null &&
+                    before.sizeBytes == file.sizeBytes &&
+                    before.modifiedSeconds == file.modifiedSeconds &&
+                    HashReusePolicy.reusable(old.fingerprint, before)
+                ) {
+                    DigestResult(old.hash, true)
+                } else {
+                    // Drop any stale digest even when opening or reading the file
+                    // subsequently fails, preventing a stale on-disk cache entry.
+                    mutex.withLock {
+                        if (cached.remove(file.uri) != null) dirty++
+                    }
+                    val md = MessageDigest.getInstance("SHA-256")
+                    val stream = context.contentResolver.openInputStream(Uri.parse(file.uri))
+                        ?: throw IOException("Audio non accessibile")
+                    stream.use { input ->
+                        val buffer = ByteArray(256 * 1024)
+                        while (true) {
+                            job?.ensureActive()
+                            val count = input.read(buffer)
+                            if (count == -1) break
+                            if (count > 0) md.update(buffer, 0, count)
+                        }
+                    }
                     job?.ensureActive()
-                    val count = input.read(buffer)
-                    if (count == -1) break
-                    if (count > 0) md.update(buffer, 0, count)
+                    val after = fingerprint(file.uri)
+                    if (before != null && before != after)
+                        throw IOException("Il file audio è cambiato durante l'analisi")
+                    val digest = md.digest()
+                    val hex = "0123456789abcdef"
+                    val hash = buildString(digest.size * 2) {
+                        for (byte in digest) {
+                            val value = byte.toInt() and 0xff
+                            append(hex[value ushr 4])
+                            append(hex[value and 15])
+                        }
+                    }
+                    if (after != null && after.sizeBytes == file.sizeBytes &&
+                        after.modifiedSeconds == file.modifiedSeconds &&
+                        HashReusePolicy.reusable(after, after)
+                    ) {
+                        mutex.withLock {
+                            cached[file.uri] = Cached(after, hash)
+                            dirty++
+                            if (dirty >= 32) saveLocked()
+                        }
+                    }
+                    DigestResult(hash, false)
                 }
             }
-            job?.ensureActive()
-            val after = fingerprint(file.uri)
-            if (before != null && before != after)
-                throw IOException("Il file audio è cambiato durante l'analisi")
-            val hash = md.digest().joinToString("") { "%02x".format(it) }
-            if (after != null && after.sizeBytes == file.sizeBytes &&
-                after.modifiedSeconds == file.modifiedSeconds &&
-                HashReusePolicy.reusable(after, after)) {
-                cached[file.uri] = Cached(after, hash)
-                dirty++
-                if (dirty >= 32) saveLocked() // checkpoint for cancellation/process exit
-            }
-            DigestResult(hash, false)
         }
     }
 }

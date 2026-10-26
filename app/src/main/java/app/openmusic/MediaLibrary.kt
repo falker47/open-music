@@ -101,8 +101,21 @@ object MediaLibrary {
             if (Build.VERSION.SDK_INT >= 29) add(MediaStore.Audio.Media.IS_AUDIOBOOK)
             if (Build.VERSION.SDK_INT >= 31) add(MediaStore.Audio.Media.IS_RECORDING)
         }
+        // Keep the MediaStore cursor open only for row extraction. Embedded-art
+        // MediaMetadataRetriever calls can be expensive and must run after it closes.
+        data class DeferredMetadata(
+            val index: Int, val flags: AudioKindFlags, val relativePath: String?,
+            val genre: String?, val trackNumber: Int?,
+        )
         fun read(volumeUri: Uri, columns: List<String>): List<AudioFile> {
             val audio = mutableListOf<AudioFile>()
+            val pending = mutableListOf<DeferredMetadata>()
+            fun meaningfulTag(tag: String?): String? = tag?.takeUnless {
+                it.trim().lowercase() in setOf(
+                    "<unknown>", "unknown", "unknown artist", "unknown album",
+                    "artista sconosciuto", "album sconosciuto", "artist", "album",
+                )
+            }
             context.contentResolver.query(
                 volumeUri,
                 columns.toTypedArray(), null, null,
@@ -126,12 +139,6 @@ object MediaLibrary {
                     val fileName = string(MediaStore.Audio.Media.DISPLAY_NAME) ?: "audio-$id"
                     val rawTitle = string(MediaStore.Audio.Media.TITLE)
                     val title = rawTitle ?: fileName.substringBeforeLast('.')
-                    fun meaningfulTag(tag: String?): String? = tag?.takeUnless {
-                        it.trim().lowercase() in setOf(
-                            "<unknown>", "unknown", "unknown artist", "unknown album",
-                            "artista sconosciuto", "album sconosciuto", "artist", "album",
-                        )
-                    }
                     val artist = meaningfulTag(string(MediaStore.Audio.Media.ARTIST))
                     val album = meaningfulTag(string(MediaStore.Audio.Media.ALBUM))
                     val duration = number(MediaStore.Audio.Media.DURATION).takeIf { it > 0L }
@@ -158,22 +165,38 @@ object MediaLibrary {
                     val first = AudioKindPolicy.assess(
                         flags, artist, album, title, fileName, relativePath, genre, trackNumber,
                     )
-                    val extra = if (first.inspectEmbeddedMetadata)
-                        inspectTags(context, uri, AudioItemStamp(uri.toString(), size, modified))
-                    else null
-                    val effectiveArtist = artist ?: extra?.artist
-                    val effectiveAlbum = album ?: extra?.album
-                    val effectiveGenre = genre ?: extra?.genre
-                    val music = if (extra == null) first.music else AudioKindPolicy.likelyMusic(
-                        flags, effectiveArtist, effectiveAlbum, title, fileName, relativePath,
-                        effectiveGenre, trackNumber, extra.hasArtwork,
-                    )
                     audio.add(AudioFile(
-                        uri.toString(), title, effectiveArtist, effectiveAlbum,
-                        duration ?: extra?.durationMs, fileName, size, modified,
-                        if (effectiveArtist != null && rawTitle != null) "tags" else "filename",
-                        music,
+                        uri.toString(), title, artist, album,
+                        duration, fileName, size, modified,
+                        if (artist != null && rawTitle != null) "tags" else "filename",
+                        first.music,
                     ))
+                    if (first.inspectEmbeddedMetadata) {
+                        pending.add(DeferredMetadata(
+                            audio.lastIndex, flags, relativePath, genre, trackNumber,
+                        ))
+                    }
+                }
+            }
+            // ContentResolver cursor has already been closed here.
+            pending.forEach { candidate ->
+                val current = audio[candidate.index]
+                val extra = inspectTags(context, Uri.parse(current.uri), current.stamp())
+                if (extra != null) {
+                    val artist = current.artist ?: meaningfulTag(extra.artist)
+                    val album = current.album ?: meaningfulTag(extra.album)
+                    val genre = candidate.genre ?: extra.genre
+                    val music = AudioKindPolicy.likelyMusic(
+                        candidate.flags, artist, album, current.title,
+                        current.displayName, candidate.relativePath, genre,
+                        candidate.trackNumber, extra.hasArtwork,
+                    )
+                    audio[candidate.index] = current.copy(
+                        artist = artist, album = album,
+                        durationMs = current.durationMs ?: extra.durationMs,
+                        source = if (artist != null) "tags" else current.source,
+                        isMusic = music,
+                    )
                 }
             }
             return audio
