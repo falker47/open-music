@@ -3,6 +3,14 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+// This QA identity is intentionally separate from any future production signing key.
+// A QA build must not silently fall back to the runner's debug certificate.
+val qaStorePath = System.getenv("OPEN_MUSIC_QA_KEYSTORE_PATH")?.takeIf { it.isNotBlank() }
+val qaPassword = System.getenv("OPEN_MUSIC_QA_KEY_PASSWORD")?.takeIf { it.isNotBlank() }
+val qaSigningReady = qaStorePath != null && qaPassword != null
+if (gradle.startParameter.taskNames.any { it.endsWith("assembleQa", ignoreCase = true) } && !qaSigningReady) {
+    throw GradleException("QA signing is not configured; refusing an unsigned QA APK")
+}
 android {
     namespace = "app.openmusic"
     compileSdk = 36
@@ -13,6 +21,23 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+    }
+    signingConfigs {
+        if (qaSigningReady) {
+            create("qa") {
+                storeFile = file(qaStorePath!!)
+                storePassword = qaPassword!!
+                keyAlias = "openmusic-qa"
+                keyPassword = qaPassword
+            }
+        }
+    }
+    buildTypes {
+        create("qa") {
+            initWith(getByName("debug"))
+            signingConfig = if (qaSigningReady) signingConfigs.getByName("qa") else null
+            matchingFallbacks += listOf("debug")
+        }
     }
     buildFeatures { compose = true }
     compileOptions {

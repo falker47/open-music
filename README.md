@@ -41,21 +41,23 @@ are also public and experimental, not stable or Play Store releases.
 
 ## Getting a QA APK
 
-This temporary device-testing stage uses **public experimental debug APKs**.
-After each successful feature-branch push, GitHub Actions runs core tests,
-builds the Android APK, and publishes it under **Releases** as a prerelease.
-Local-player QA needs no private keystore or repository; Google Drive OAuth QA requires the signing-certificate SHA-1 and an Android OAuth client.
+The current OAuth QA milestone uses a **separate Android `qa` build type**,
+signed by a persistent **QA-only** key. This is not the production key. An
+ordinary `debug` build still exists for local testing, but its runner/debug
+signature must not be registered in Google Cloud Console.
 
-The GitHub Actions runner's default debug certificate can differ between
-builds. If Android refuses an in-place update, the tester can **uninstall
-the old version and install the new APK**, knowingly resetting local app data
-(including playlists). Backups are optional for the present disposable QA
-installations; use Export JSON v1 if any playlist should be retained.
-Persistent signing and dependable in-place upgrades are deferred to a later
-release phase. Cloud OAuth authorization requires an Android OAuth client bound
-to package `app.openmusic` and the SHA-1 certificate of the exact APK. Runner
-debug certificates vary between QA builds; durable cloud QA needs stable
-signing configured securely, not a committed key. [Details](docs/GOOGLE_DRIVE_SYNC.md).
+Core tests and the ordinary debug APK always build in CI. The QA variant is
+also compiled and signature-checked with a disposable CI-only key when the
+persistent key is not yet provisioned; that disposable APK is **never
+published**. Once the single repository Actions secret `OPEN_MUSIC_QA_SIGNING`
+is configured, feature-branch push CI publishes `app-qa.apk` and a public
+`qa-signing-info.txt` with the actual certificate SHA-1 on a GitHub Release
+prerelease for that commit. This permits stable updates and a repeatable OAuth
+client fingerprint. Follow [the setup guide](docs/GOOGLE_DRIVE_SYNC.md) to
+create the QA keystore locally without placing a key or password in the repo.
+Do not delete the previous installation without exporting playlists if they
+matter; **switching from old runner-debug APKs to QA-signed APKs can require a
+one-time uninstall** and will delete local application storage.
 
 The source repository stays public under the MIT license. PR #1 remains
 draft: public test APKs are not stable releases or Play Store publication.

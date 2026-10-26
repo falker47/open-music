@@ -29,12 +29,49 @@ Regression tests cover two-device forks, explicit merge, corrupted revisions
 and inconsistent checkpoints. These unit tests do not prove an Android OAuth
 session, remote upload or device-to-device restoration.
 
-## Required setup to test Google authorization
+## Stable QA signing / OAuth activation (external prerequisites)
 
-1. In [Google Cloud Console](https://console.cloud.google.com/apis/library/drive.googleapis.com), enable **Google Drive API** in a Cloud project under the publisher's control.
-2. Configure Google Auth Platform Branding/Audience (external test users if in testing) and create an **Android OAuth client** using the **package name `app.openmusic`** and the **SHA-1 fingerprint of the exact test APK's signing certificate**. The SHA-1 can be read with `keytool -printcert -jarfile app-debug.apk` or Android `apksigner verify --print-certs` on the built APK.
-3. The current GitHub Actions QA builds are signed by a *new runner debug key* and that SHA-1 may change between runs. A **stable QA keystore stored securely as a GitHub Actions secret** is needed for reusable authorization across future QA releases; do not commit a signing key or client secret to the public repository. If Google Cloud is not configured, the app should keep local functionality and show an authorization error. The SHA-1 / OAuth project cannot be inferred from a successful build.
-4. Install the APK on an Android device with Google Play services and test *Collega Google Drive*. Consent must grant **drive.appdata only**; then *Sincronizza Drive* can upload/download metadata. Use a test account and no irreplaceable playlist data until conflict/restore QA passes.
+**QA signing is prepared in code but not provisioned until the owner adds the
+secret.** Production signing is independent and not set up by this workflow.
+
+1. On a trusted Windows computer with Java `keytool`, run
+   [`scripts/prepare-qa-signing.ps1`](../scripts/prepare-qa-signing.ps1)
+   locally. It creates `~/.open-music/open-music-qa.p12`, refuses to overwrite
+   an existing key, puts a JSON secret payload on the clipboard (not on disk),
+   and prints the **public** SHA-1 fingerprint. Keep an **encrypted backup**
+   of the `.p12` and its password offline; never paste either into a PR,
+   issue, log, chat or public file.
+2. In [GitHub Actions repository secrets](https://github.com/falker47/open-music/settings/secrets/actions),
+   add exactly one **repository** secret called `OPEN_MUSIC_QA_SIGNING`,
+   pasting the clipboard payload as its value. This is a JSON object holding
+   `keystoreBase64` and `password`; Base64 is encoding, **not encryption**,
+   so it belongs only in the GitHub encrypted secret field. The script uses
+   the fixed alias `openmusic-qa`. Never use a production keystore here.
+3. Subsequent pushes to `feat/**` build the signed `app-qa.apk` and publish
+   it with `qa-signing-info.txt`; the latter records the actual certificate
+   SHA-1 and commit without disclosing the key. A PR or a push **without**
+   the secret exercises the QA Gradle variant with a disposable certificate
+   only; **no QA APK is published**. The ordinary debug CI remains green.
+4. In [Google Cloud Console](https://console.cloud.google.com/apis/library/drive.googleapis.com)
+   enable Google Drive API in a project controlled by the owner. Configure
+   [Google Auth Platform](https://console.cloud.google.com/auth/overview)
+   (Branding/Audience, test accounts while in Testing) and an **Android OAuth
+   client**, package name `app.openmusic`, SHA-1 copied from the
+   **published QA release's** `qa-signing-info.txt`. Configure/declare the
+   **`https://www.googleapis.com/auth/drive.appdata`** scope. No OAuth
+   client secret or `google-services.json` is needed by the Android
+   AuthorizationClient used here.
+5. Install the exact `app-qa.apk` on an Android device with Google Play
+   services. Previous experimental runner-debug APKs can have a different
+   signing certificate, so upgrading directly may fail. Export JSON v1
+   before a deliberate one-time uninstall if the local playlists matter.
+   Grant Drive access only to a chosen test account and validate the actual
+   upload/download/conflict/offline gates below.
+
+**Privacy:** the signing payload must remain solely in GitHub encrypted
+secrets and the owner's secure backup. The GitHub workflow masks the password
+before passing it to Gradle and never publishes the private key. The *public*
+SHA-1 alone is safe to place into Google Cloud Console.
 
 Official references:
 - https://developer.android.com/identity/authorization
