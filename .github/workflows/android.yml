@@ -64,7 +64,8 @@ jobs:
       # secrets exist. Never distribute an APK signed by an ephemeral runner key.
       - name: Verify persistent QA certificate
         if: github.event_name == 'push' && env.QA_SIGNING_READY == 'true'
-        run: "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs app/build/outputs/apk/debug/app-debug.apk
+        run: |
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs app/build/outputs/apk/debug/app-debug.apk
       # Private QA releases only: a public repository or missing key must NOT
       # publish an update that could force uninstall and erase playlists.
       - name: Publish private signed QA prerelease
