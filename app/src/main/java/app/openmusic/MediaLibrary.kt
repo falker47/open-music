@@ -9,6 +9,7 @@ import android.os.Build
 import android.provider.MediaStore
 import app.openmusic.core.AudioKindFlags
 import app.openmusic.core.AudioKindPolicy
+import app.openmusic.core.AudioItemStamp
 import app.openmusic.core.ContentDigest
 import app.openmusic.core.LocalCopy
 import app.openmusic.core.TrackIdentity
@@ -32,6 +33,8 @@ data class AudioFile(
         filenameHint = displayName,
     ))
 }
+
+internal fun AudioFile.stamp(): AudioItemStamp = AudioItemStamp(uri, sizeBytes, modifiedSeconds)
 
 object MediaLibrary {
     fun permission(): String = if (Build.VERSION.SDK_INT >= 33)
@@ -57,10 +60,10 @@ object MediaLibrary {
             if (Build.VERSION.SDK_INT >= 29) add(MediaStore.Audio.Media.IS_AUDIOBOOK)
             if (Build.VERSION.SDK_INT >= 31) add(MediaStore.Audio.Media.IS_RECORDING)
         }
-        fun read(columns: List<String>): List<AudioFile> {
+        fun read(volumeUri: Uri, columns: List<String>): List<AudioFile> {
             val audio = mutableListOf<AudioFile>()
             context.contentResolver.query(
-                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                volumeUri,
                 columns.toTypedArray(), null, null,
                 MediaStore.Audio.Media.TITLE + " COLLATE NOCASE ASC",
             )?.use { cursor ->
@@ -85,7 +88,7 @@ object MediaLibrary {
                     val artist = string(MediaStore.Audio.Media.ARTIST)?.takeUnless { it == "<unknown>" }
                     val album = string(MediaStore.Audio.Media.ALBUM)?.takeUnless { it == "<unknown>" }
                     val duration = number(MediaStore.Audio.Media.DURATION).takeIf { it > 0L }
-                    val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
+                    val uri = ContentUris.withAppendedId(volumeUri, id)
                     val flags = AudioKindFlags(
                         music = flag(MediaStore.Audio.Media.IS_MUSIC),
                         podcast = flag(MediaStore.Audio.Media.IS_PODCAST),
@@ -106,10 +109,18 @@ object MediaLibrary {
                     ))
                 }
             }
-            return audio.sortedWith(compareBy({ it.title.lowercase() }, { it.artist.orEmpty().lowercase() }))
+            return audio
         }
-        // Older/OEM MediaStore implementations can reject one optional column.
-        return try { read(base + categories) } catch (_: IllegalArgumentException) { read(base) }
+        // API 29+ exposes distinct stable volume URIs; the synthetic "external"
+        // volume cannot safely be used with getVersion/getGeneration cache keys.
+        val volumes = if (Build.VERSION.SDK_INT >= 29)
+            MediaStore.getExternalVolumeNames(context).map { MediaStore.Audio.Media.getContentUri(it) }
+        else listOf(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI)
+        return volumes.flatMap { volume ->
+            // Older/OEM providers may not expose every classification flag.
+            try { read(volume, base + categories) }
+            catch (_: IllegalArgumentException) { read(volume, base) }
+        }.sortedWith(compareBy({ it.title.lowercase() }, { it.artist.orEmpty().lowercase() }))
     }
 
     /** Invoked only from Dispatchers.IO. */

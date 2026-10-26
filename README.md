@@ -6,12 +6,12 @@ Android-first, local-first music player with portable playlists independent of f
 
 ## What works in the first Android QA build
 
-- Browse and search local audio indexed by Android MediaStore.
+- Browse and search two complementary local categories, **Musica** and **Altri audio**, with persistent, reversible manual classification. All audio remains in the SHA-256 matching inventory.
 - Play locally accessible tracks with Media3 ExoPlayer (play/pause/next/previous/seek); a MediaSessionService now owns playback so it can continue with the screen locked or another app in front (pending real-device QA).
 - Create multiple local playlists, add/remove entries and preserve order and repetitions.
 - Export/import portable JSON playlist v1 using the Android system document picker.
   - The picker may show Google Drive or pCloud if they expose a compatible DocumentsProvider. **This is manual export/import, not automatic cloud sync.**
-- Relink imported playlists with streaming SHA-256 hashes even after renaming or moving exact files.
+- Automatically relink imported playlists and manually retry with **Ricollega**; an app-private SHA-256 cache reuses verified unchanged files across rescans/restarts when MediaStore volume/version/generation metadata is trustworthy. Exact renamed/moved files still match by content.
 - Preserve missing items instead of deleting them; never automatically link a different hash.
 - Save local working playlists in private app storage with atomic writes. No sign-in, tracker or hosted database.
 
@@ -20,7 +20,7 @@ Android-first, local-first music player with portable playlists independent of f
 - No direct cloud streaming, OAuth, automatic synchronization or Windows client yet.
 - Device QA (26 October 2026) confirmed background playback and notification-shade play/pause/previous/next. Lock-screen card visibility and slight perceived notification-control latency remain **unresolved**; this follow-up build adds [targeted QA diagnostics](docs/ANDROID_MEDIA_QA.md) and event-driven UI synchronization, not an unverified platform workaround. Reboot/process-death resumption and Android Auto browsing are not implemented.
 - Only audio present in MediaStore can be scanned; arbitrary downloaded document locations may be omitted.
-- Relink reads every local audio file to calculate exact hashes. Start with **5–20 small local files**, not an entire virtual pCloud drive.
+- An initial relink can read the entire local library; subsequent imports/rescans reuse verified hashes. Older Android/provider metadata may require a full safe rehash. Timings and recomputed-file counts are shown in-app; see [Android library QA](docs/ANDROID_LIBRARY_QA.md). Do not scan remote mounts.
 - Real-device QA and provider QA are still required; JVM tests and CI compilation do not prove on-device behavior.
 - Import refuses to overwrite a playlist with an existing ID. Merge/conflict resolution is future work.
 - Changes to file encoding or tags can change SHA-256 and require user review.

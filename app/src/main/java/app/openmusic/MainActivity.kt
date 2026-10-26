@@ -48,6 +48,7 @@ import app.openmusic.core.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.delay
@@ -74,13 +75,17 @@ private fun OpenMusicApp() {
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     val storage = remember { PlaylistStorage(context.applicationContext) }
+    val kindStorage = remember { ManualAudioStorage(context.applicationContext) }
     val artworkCache = remember { LocalArtworkCache() }
     val hashCache = remember { MediaHashCache(context.applicationContext) }
     val playlistWriteMutex = remember { Mutex() }
+    val kindWriteMutex = remember { Mutex() }
     // The playback engine lives in PlaybackService; this UI only holds a controller.
     var player by remember { mutableStateOf<MediaController?>(null) }
     var audioFiles by remember { mutableStateOf(emptyList<AudioFile>()) }
     var localCopies by remember { mutableStateOf(emptyList<LocalCopy>()) }
+    var manualKinds by remember { mutableStateOf(emptyMap<String, ManualAudioOverride>()) }
+    var latestAnalysis by remember { mutableStateOf("") }
     var resolvedMatches by remember { mutableStateOf(emptyMap<String, List<MatchResult>>()) }
     var verificationComplete by remember { mutableStateOf(false) }
     var verifying by remember { mutableStateOf(false) }
@@ -132,47 +137,69 @@ private fun OpenMusicApp() {
     ) {
         // Matching thousands of entries must never happen during Compose recomposition.
         val results = withContext(Dispatchers.Default) {
-            collection.associate { it.playlistId to PlaylistMatcher.resolve(it, copies) }
+            PlaylistMatcher.resolveAll(collection, copies)
         }
         resolvedMatches = results
     }
 
-    suspend fun reconcile(found: List<AudioFile>) {
+    suspend fun reconcile(found: List<AudioFile>, reason: String = "scansione") {
         verifying = true
         verificationComplete = false
         unreadableCount = 0
         resolvedMatches = emptyMap()
         val fresh = ArrayList<LocalCopy>(found.size)
+        val hints = ReconcilePriority.hints(playlists)
+        // Metadata only schedules the first candidates. Every file is SHA-checked
+        // before a missing result can be considered final.
+        val ordered = found.sortedByDescending {
+            ReconcilePriority.score(it.asCopy().identity, hints)
+        }
         var unreadable = 0
+        var reused = 0
+        var recomputed = 0
+        val started = android.os.SystemClock.elapsedRealtime()
         try {
-            for ((index, audio) in found.withIndex()) {
-                if (index % 8 == 0 || index == found.lastIndex) {
-                    busy = "Analisi in corso · " + (index + 1) + "/" + found.size
-                }
-                val hash = try {
-                    hashCache.sha256(audio)
+            for ((index, audio) in ordered.withIndex()) {
+                val digest = try {
+                    hashCache.digest(audio)
                 } catch (cancel: CancellationException) {
                     throw cancel
                 } catch (_: Exception) {
                     unreadable++
                     null
                 }
-                fresh.add(audio.asCopy(hash))
+                if (digest?.reused == true) reused++
+                else if (digest != null) recomputed++
+                fresh.add(audio.asCopy(digest?.hash))
+                // Indexed matching runs off the main thread. Publish verified
+                // matches progressively; never publish provisional MISSING.
+                if ((index + 1) % 24 == 0 || index == ordered.lastIndex) {
+                    localCopies = fresh.toList()
+                    refreshMatches(playlists, localCopies)
+                    busy = "Verifica SHA-256 · " + (index + 1) + "/" + ordered.size +
+                        " · cache " + reused
+                }
             }
-            localCopies = fresh
-            refreshMatches(playlists, fresh)
+            localCopies = fresh.toList()
+            refreshMatches(playlists, localCopies)
             unreadableCount = unreadable
             verificationComplete = unreadable == 0
+            val elapsed = android.os.SystemClock.elapsedRealtime() - started
+            latestAnalysis = reason + ": " + elapsed + " ms · " +
+                recomputed + " hash ricalcolati · " + reused + " dalla cache / " + found.size
             val current = playlists.firstOrNull { it.playlistId == selectedId }
             val matched = current?.let { resolvedMatches[it.playlistId].orEmpty() }
                 ?.count { it.status == MatchStatus.EXACT } ?: 0
             if (current != null) {
-                notifyUser("Disponibili " + matched + "/" + current.tracks.size +
+                notifyUser("SHA verificati " + matched + "/" + current.tracks.size +
                     " · audio non leggibili: " + unreadable)
             } else if (unreadable > 0) {
                 notifyUser("Analisi completata con " + unreadable + " audio non leggibili")
             }
         } finally {
+            // Save a partial warm cache even when the user cancels halfway.
+            try { withContext(NonCancellable) { hashCache.flush() } }
+            catch (_: Exception) { notifyUser("Cache SHA non salvata: la prossima analisi potrebbe rallentare") }
             verifying = false
         }
     }
@@ -183,9 +210,15 @@ private fun OpenMusicApp() {
         analysisJob = scope.launch {
             try {
                 val found = withContext(Dispatchers.IO) { MediaLibrary.scan(context) }
-                // A rescan intentionally invalidates cached digests, including changed
-                // items whose providers failed to update their modification timestamp.
-                hashCache.clearForRescan()
+                // Retain unchanged MediaStore identities across scans and app restarts.
+                hashCache.prepareForScan(found)
+                kindWriteMutex.withLock {
+                    val retained = AudioClassification.retain(manualKinds, found.map { it.stamp() })
+                    if (retained != manualKinds) {
+                        withContext(Dispatchers.IO) { kindStorage.save(retained) }
+                        manualKinds = retained
+                    }
+                }
                 audioFiles = found
                 didScan = true
                 localCopies = found.map { it.asCopy() }
@@ -196,6 +229,7 @@ private fun OpenMusicApp() {
                     reconcile(found)
                 } else {
                     verificationComplete = true
+                    hashCache.flush()
                     notifyUser("Indicizzati " + found.size + " file audio")
                 }
             } catch (cancel: CancellationException) {
@@ -249,6 +283,7 @@ private fun OpenMusicApp() {
             playlistWriteMutex.withLock {
                 try {
                     val hash = hashCache.sha256(file)
+                    hashCache.flush()
                     val list = playlists.firstOrNull { it.playlistId == listId }
                         ?: throw IllegalStateException("Playlist non trovata")
                     val identity = file.asCopy(hash).identity
@@ -292,11 +327,25 @@ private fun OpenMusicApp() {
         }
     }
 
+    fun setMusicClassification(file: AudioFile, music: Boolean) {
+        scope.launch {
+            kindWriteMutex.withLock {
+                val updated = AudioClassification.set(manualKinds, file.stamp(), music)
+                try {
+                    withContext(Dispatchers.IO) { kindStorage.save(updated) }
+                    manualKinds = updated
+                } catch (failure: Exception) {
+                    notifyUser("Classificazione non salvata: " +
+                        (failure.localizedMessage ?: "errore"))
+                }
+            }
+        }
+    }
+
     fun relink() {
         if (busy.isNotEmpty()) return
         if (selected == null) { notifyUser("Seleziona una playlist"); return }
-        // Manual retry does a fresh scan, invalidates old digests and rechecks all
-        // audio (including files hidden by the Music-only library filter).
+        // Manual retry re-scans all audio, but only changed/uncached bytes are rehashed.
         requestScan()
     }
 
@@ -328,8 +377,8 @@ private fun OpenMusicApp() {
                     tab = 1
                     if (didScan) {
                         // Automatic local reconciliation, no second user action needed.
-                        reconcile(audioFiles)
-                        notifyUser("Importata " + imported.name + " · verifica completata")
+                        reconcile(audioFiles, "importazione")
+                        notifyUser("Importata " + imported.name + " · riconciliazione eseguita")
                     } else {
                         needsScan = true
                         notifyUser("Importata " + imported.name + " · scansione automatica")
@@ -384,6 +433,7 @@ private fun OpenMusicApp() {
     LaunchedEffect(Unit) {
         try {
             playlists = withContext(Dispatchers.IO) { storage.load() }
+            manualKinds = withContext(Dispatchers.IO) { kindStorage.load() }
             selectedId = playlists.firstOrNull()?.playlistId
         } catch (failure: Exception) {
             notifyUser("Archivio locale non leggibile: " + (failure.localizedMessage ?: "errore"))
@@ -399,6 +449,7 @@ private fun OpenMusicApp() {
             try {
                 val hash = hashCache.sha256(file)
                 pendingHash = hash
+                hashCache.flush()
                 localCopies = localCopies.map {
                     if (it.uri == file.uri) file.asCopy(hash) else it
                 }
@@ -571,15 +622,16 @@ private fun OpenMusicApp() {
     }
 
     BackHandler(enabled = showNowPlaying) { showNowPlaying = false }
-    val musicCount = remember(audioFiles) { audioFiles.count { it.isMusic } }
-    val visibleAudio = remember(audioFiles, onlyMusic) {
-        if (onlyMusic) audioFiles.filter { it.isMusic } else audioFiles
+    val musicCount = remember(audioFiles, manualKinds) {
+        audioFiles.count { AudioClassification.isMusic(it.isMusic, it.stamp(), manualKinds) }
+    }
+    val visibleAudio = remember(audioFiles, manualKinds, onlyMusic) {
+        audioFiles.filter {
+            AudioClassification.isMusic(it.isMusic, it.stamp(), manualKinds) == onlyMusic
+        }
     }
     val filtered = remember(visibleAudio, search) {
-        visibleAudio.filter {
-            it.title.contains(search, ignoreCase = true) ||
-                it.artist.orEmpty().contains(search, ignoreCase = true)
-        }
+        visibleAudio.filter { AudioSearch.matches(it.title, it.artist, search) }
     }
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -652,13 +704,14 @@ private fun OpenMusicApp() {
                         )
                         FilterChip(
                             selected = !onlyMusic, onClick = { onlyMusic = false },
-                            label = { Text("Tutti gli audio (" + audioFiles.size + ")") },
+                            label = { Text("Altri audio (" + (audioFiles.size - musicCount) + ")") },
                         )
                     }
                     OutlinedTextField(
                         value = search, onValueChange = { search = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("Cerca brano o artista") },
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        textStyle = MaterialTheme.typography.bodyMedium,
+                        placeholder = { Text("Cerca brano o artista", style = MaterialTheme.typography.bodyMedium) },
                         leadingIcon = {
                             Icon(androidx.compose.material.icons.Icons.Rounded.Search,
                                 contentDescription = null)
@@ -671,7 +724,7 @@ private fun OpenMusicApp() {
                                 }
                             }
                         },
-                        shape = RoundedCornerShape(18.dp), singleLine = true,
+                        shape = RoundedCornerShape(14.dp), singleLine = true,
                     )
                     Spacer(Modifier.height(12.dp))
                     if (filtered.isEmpty()) {
@@ -679,7 +732,7 @@ private fun OpenMusicApp() {
                             title = if (search.isNotBlank()) "Nessun risultato" else "La libreria è vuota",
                             description = if (search.isNotBlank()) "Prova un altro titolo o artista."
                                 else if (onlyMusic && audioFiles.isNotEmpty())
-                                    "Nessun file classificato come musica. Prova «Tutti gli audio»."
+                                    "Nessun brano classificato come musica. Prova «Altri audio»."
                                 else "Consenti l'accesso e aggiorna per trovare i tuoi brani.",
                             icon = androidx.compose.material.icons.Icons.Rounded.LibraryMusic,
                             buttonLabel = if (search.isNotBlank()) "Cancella ricerca" else "Scansiona dispositivo",
@@ -695,6 +748,16 @@ private fun OpenMusicApp() {
                                     file = file, cache = artworkCache,
                                     onPlay = { playQueue(filtered, index) },
                                     onAdd = { requestAddToPlaylist(file) },
+                                    inMusic = AudioClassification.isMusic(
+                                        file.isMusic, file.stamp(), manualKinds,
+                                    ),
+                                    onToggleMusic = {
+                                        setMusicClassification(
+                                            file, !AudioClassification.isMusic(
+                                                file.isMusic, file.stamp(), manualKinds,
+                                            ),
+                                        )
+                                    },
                                 )
                             }
                         }
@@ -733,17 +796,19 @@ private fun OpenMusicApp() {
                                 }
                             }
                         }
-                        if (playlists.isNotEmpty()) {
+                        // A single playlist needs no selector: the detail is already visible.
+                        // With multiple playlists use one compact chooser and one detail panel.
+                        if (PlaylistSelection.showSelector(playlists.size)) {
                             item {
-                                LazyRow(
-                                    horizontalArrangement = Arrangement.spacedBy(9.dp),
-                                    contentPadding = PaddingValues(vertical = 3.dp),
+                                Row(
+                                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
-                                    items(playlists, key = { it.playlistId }) { list ->
-                                        MusicPlaylistCard(
-                                            name = list.name, count = list.tracks.size,
+                                    playlists.forEach { list ->
+                                        FilterChip(
                                             selected = list.playlistId == selectedId,
                                             onClick = { selectedId = list.playlistId },
+                                            label = { Text(list.name + " · " + list.tracks.size) },
                                         )
                                     }
                                 }
@@ -782,6 +847,10 @@ private fun OpenMusicApp() {
                                         )
                                     },
                                 )
+                            }
+                            if (latestAnalysis.isNotEmpty()) item {
+                                Text(latestAnalysis, color = Muted,
+                                    style = MaterialTheme.typography.labelSmall)
                             }
                             item {
                                 MusicSectionHeader(

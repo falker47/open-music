@@ -2,11 +2,11 @@ package app.openmusic.core
 
 enum class VerificationDisplay { ANALYZING, AVAILABLE, REVIEW, AMBIGUOUS, MISSING }
 
-/** A missing result is only authoritative after every local audio item was checked. */
+/** Show proven SHA matches immediately; absence is final only after a complete scan. */
 object PlaylistVerification {
     fun display(status: MatchStatus?, analyzing: Boolean, complete: Boolean): VerificationDisplay {
-        if (analyzing) return VerificationDisplay.ANALYZING
         if (status == MatchStatus.EXACT) return VerificationDisplay.AVAILABLE
+        if (analyzing) return VerificationDisplay.ANALYZING
         if (!complete) return VerificationDisplay.REVIEW
         return when (status) {
             MatchStatus.AMBIGUOUS -> VerificationDisplay.AMBIGUOUS

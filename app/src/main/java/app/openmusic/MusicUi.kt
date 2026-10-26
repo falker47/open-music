@@ -29,6 +29,7 @@ import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
@@ -364,6 +365,7 @@ internal fun MusicEmptyState(
 internal fun MusicTrackRow(
     file: AudioFile, cache: LocalArtworkCache,
     onPlay: () -> Unit, onAdd: () -> Unit,
+    inMusic: Boolean, onToggleMusic: () -> Unit,
 ) {
     Row(
         Modifier.fillMaxWidth().heightIn(min = 76.dp),
@@ -388,37 +390,18 @@ internal fun MusicTrackRow(
                 )
             }
         }
+        IconButton(onClick = onToggleMusic, modifier = Modifier.size(48.dp)) {
+            Icon(
+                if (inMusic) Icons.Rounded.RemoveCircleOutline else Icons.Rounded.LibraryMusic,
+                contentDescription = (if (inMusic) "Rimuovi da Musica: " else "Aggiungi a Musica: ") +
+                    file.title,
+                tint = if (inMusic) MusicPalette.muted else MusicPalette.primary,
+                modifier = Modifier.size(23.dp),
+            )
+        }
         IconButton(onClick = onAdd, modifier = Modifier.size(48.dp)) {
             Icon(Icons.Rounded.Add, contentDescription = "Aggiungi " + file.title + " a una playlist",
                 tint = MusicPalette.primary, modifier = Modifier.size(25.dp))
-        }
-    }
-}
-
-@Composable
-internal fun MusicPlaylistCard(
-    name: String, count: Int, selected: Boolean, onClick: () -> Unit,
-) {
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.width(174.dp).height(112.dp),
-        shape = RoundedCornerShape(19.dp),
-        color = if (selected) MusicPalette.elevated else MusicPalette.surface,
-        border = BorderStroke(1.dp, if (selected) MusicPalette.primary else MusicPalette.border),
-    ) {
-        Column(
-            Modifier.fillMaxSize().padding(14.dp),
-            verticalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Icon(Icons.Rounded.PlaylistPlay, contentDescription = null,
-                tint = if (selected) MusicPalette.primary else MusicPalette.muted,
-                modifier = Modifier.size(25.dp))
-            Column {
-                Text(name, style = MaterialTheme.typography.titleMedium, maxLines = 1,
-                    overflow = TextOverflow.Ellipsis)
-                Text(count.toString() + if (count == 1) " brano" else " brani",
-                    color = MusicPalette.muted, style = MaterialTheme.typography.bodySmall)
-            }
         }
     }
 }
@@ -451,8 +434,12 @@ internal fun MusicPlaylistHero(
                     Text(name, style = MaterialTheme.typography.titleLarge,
                         maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.height(4.dp))
-                    Text(trackCount.toString() + " brani · " + available.toString() + " disponibili",
-                        color = MusicPalette.muted, style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        if (analyzing) trackCount.toString() + " brani · " + available +
+                            " SHA confermati · verifica in corso"
+                        else trackCount.toString() + " brani · " + available + " disponibili",
+                        color = MusicPalette.muted, style = MaterialTheme.typography.bodySmall,
+                    )
                 }
             }
             Spacer(Modifier.height(14.dp))
@@ -541,7 +528,7 @@ internal fun MusicPlaylistTrackRow(
                         VerificationDisplay.AMBIGUOUS -> "Ambiguo"
                         VerificationDisplay.MISSING -> "Mancante"
                     },
-                    color = if (status == MatchStatus.EXACT && !analyzing)
+                    color = if (status == MatchStatus.EXACT)
                         MusicPalette.primary else MusicPalette.warning,
                     style = MaterialTheme.typography.labelSmall,
                 )

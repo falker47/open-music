@@ -8,9 +8,9 @@ Android MediaStore -> AudioFile (content URI + tags) -> Media3 ExoPlayer in Play
 
 Adding a file to a playlist computes a streaming SHA-256 hash in a worker coroutine. The portable JSON contains stable entry IDs, hash, metadata and optional filename hint. Its source URI is never serialized. Copies with the same exact hash may be linked after files change name or folder.
 
-Import uses Android's system document picker and does not require provider OAuth. The user explicitly invokes **Ricollega** to compute local hashes and resolve entries. Only EXACT or METADATA may play; REVIEW, AMBIGUOUS, and MISSING remain visible but unlinked.
+Import uses Android's system document picker and does not require provider OAuth. Imported playlists are reconciled automatically against the **entire** local MediaStore audio inventory; **Ricollega** rescans it on demand. An app-private atomic SHA-256 cache is distinct from portable JSON v1 and reuses entries only with trustworthy volume/version, size, last-modified and generation metadata. On unsupported or uncertain providers it rereads content. Candidate metadata affects order only, never matching identity. VERIFIED EXACT entries appear progressively; MISSING is final only after a complete readable inventory scan. Only EXACT or METADATA may play; REVIEW, AMBIGUOUS and MISSING remain visible but unlinked.
 
-Working playlists are saved to app-private JSON with Android AtomicFile. A duplicate imported playlist ID is refused rather than overwritten.
+Working playlists are saved to app-private JSON with Android AtomicFile. A duplicate imported playlist ID is refused rather than overwritten. Manual Music/Other audio overrides are saved to a second private AtomicFile, keyed to MediaStore identity with size/modified safeguards; stale overrides are removed on rescans. Neither storage is exported in portable playlists.
 
 Manual additions are idempotent within each playlist for a matching SHA-256 content digest. An already present recording produces feedback without changing playlist entries or timestamps; the same recording is allowed in another playlist. Imported legacy duplicates are preserved in their original order for portable v1 compatibility. Metadata-only similarity never blocks a distinct file.
 
