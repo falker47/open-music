@@ -37,10 +37,11 @@ jobs:
           gradle-version: "8.13"
       - name: Test and assemble debug APK
         run: gradle :core:test :app:assembleDebug --no-daemon --stacktrace
-      # A published prerelease remains private because the repository is private.
+      # The repository is public by owner choice. Published QA prereleases and APKs
+      # are publicly downloadable; no credentials or private assets may be bundled.
       # A draft is not a reliable mobile download channel, even when an asset is uploaded.
       # Avoid Actions artifacts while this account's artifact storage quota is exhausted.
-      - name: Provide APK as private-repository QA prerelease
+      - name: Publish experimental public QA prerelease
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/feat/')
         env:
           GH_TOKEN: ${{ github.token }}
@@ -54,6 +55,6 @@ jobs:
               gh release upload "$TAG" "$FILE"
             fi
           else
-            gh release create "$TAG" "$FILE" --prerelease --target "$GITHUB_SHA" --title "Open Music private-repository QA $TAG" --notes "Android debug APK for device QA in a private repository. Not a Play Store or production release."
+            gh release create "$TAG" "$FILE" --prerelease --target "$GITHUB_SHA" --title "Open Music experimental QA $TAG" --notes "Public Android debug APK for device QA. Experimental and not a stable, Play Store, or production release. Preserve app data when installing updates."
           fi
           gh release view "$TAG" --json url,isDraft,isPrerelease,assets --jq '{url, isDraft, isPrerelease, assetNames: [.assets[].name]}'

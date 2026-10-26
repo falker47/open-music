@@ -32,9 +32,9 @@ Android-first, local-first music player with portable playlists independent of f
 - Playlist format: v1 JSON compatible with the Python POC provided on 24 October 2026.
 - CI: GitHub Actions, Gradle 8.13, Android Gradle Plugin 8.11.1, JDK 17.
 
-## Getting the first APK
+## Getting a QA APK
 
-When [Android build and core tests](../../actions/workflows/android.yml) succeeds on a feature-branch push, the job creates a **QA prerelease in the private GitHub repository** and attaches `app-debug.apk`. Open the release for the exact tested commit while signed in with a GitHub account authorized to read the private repository, then download the APK from **Assets** in a normal browser. The QA prerelease is published *only within the private repository*: it is not a public or Google Play release, and it does not merge code to `main`. Draft releases were discontinued for QA distribution because GitHub Mobile can show them as empty even with an uploaded APK. GitHub Actions artifacts are not used while the account's artifact storage quota is exhausted. Verify both CI and actual accessibility of the APK for the intended tester, rather than treating an uploaded asset as proof of download.
+**Open Music is developed in a public GitHub repository** (confirmed by the owner on 26 October 2026). When [Android build and core tests](../../actions/workflows/android.yml) succeeds on a feature-branch push, the job creates a **public experimental QA prerelease** and attaches `app-debug.apk`. Anyone may view and download the asset from **Assets**; GitHub sign-in is not required for a public release. These are **debug test builds**, not a stable app, Play Store listing or approval to merge the draft PR into `main`. Draft releases were discontinued for QA distribution because GitHub Mobile can show them as empty even with an uploaded APK. GitHub Actions artifacts are not used while the account's artifact storage quota is exhausted. Verify both CI and actual accessibility of the APK on the tester's device. Preserve existing app data: avoid uninstalling a previous version merely to install a new QA build; APK signing continuity is a separate open QA gate.
 
 Android Studio can import this Gradle project. In CI we use the pinned Gradle distribution (no unverified Gradle wrapper binary is committed):
 
