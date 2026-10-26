@@ -341,9 +341,15 @@ private fun OpenMusicApp() {
             onDispose { }
         } else {
             fun updateNowPlaying() {
-                nowTitle = active.currentMediaItem?.mediaMetadata?.title?.toString().orEmpty()
-                nowArtist = active.currentMediaItem?.mediaMetadata?.artist?.toString().orEmpty()
+                // Read the same effective metadata the MediaSession publishes to Android.
+                val metadata = active.mediaMetadata
+                nowTitle = metadata.title?.toString().orEmpty()
+                nowArtist = metadata.artist?.toString().orEmpty()
                 playing = active.isPlaying
+                // Reflect seek/skip and Activity reconnection immediately, rather than
+                // leaving the progress bar on its prior track until the 750 ms tick.
+                position = active.currentPosition.coerceAtLeast(0L)
+                duration = active.duration.coerceAtLeast(0L)
             }
             val listener = object : Player.Listener {
                 override fun onEvents(player: Player, events: Player.Events) {

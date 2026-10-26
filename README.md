@@ -18,7 +18,7 @@ Android-first, local-first music player with portable playlists independent of f
 ## Current limitations
 
 - No direct cloud streaming, OAuth, automatic synchronization or Windows client yet.
-- Media3 notification, lock-screen and headset controls are included in the new background-playback QA build but **not yet device-verified**. Reboot/process-death playback resumption and Android Auto browsing are not implemented.
+- Device QA (26 October 2026) confirmed background playback and notification-shade play/pause/previous/next. Lock-screen card visibility and slight perceived notification-control latency remain **unresolved**; this follow-up build adds [targeted QA diagnostics](docs/ANDROID_MEDIA_QA.md) and event-driven UI synchronization, not an unverified platform workaround. Reboot/process-death resumption and Android Auto browsing are not implemented.
 - Only audio present in MediaStore can be scanned; arbitrary downloaded document locations may be omitted.
 - Relink reads every local audio file to calculate exact hashes. Start with **5–20 small local files**, not an entire virtual pCloud drive.
 - Real-device QA and provider QA are still required; JVM tests and CI compilation do not prove on-device behavior.
