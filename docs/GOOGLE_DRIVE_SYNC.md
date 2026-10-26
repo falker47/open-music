@@ -21,6 +21,14 @@ The first adapter uses **Google Drive**, deliberately choosing the narrow non-se
 
 **Limitations:** the first adapter lists remote revision metadata on each manual sync and downloads only the required snapshots; a Drive Changes incremental cursor, always-on background scheduling, tombstone deletion UI, pCloud adapter and cloud audio playback are future work. A multi-device conflict remains unresolved until an explicit choice; missing/corrupt remote history blocks writes. No cloud data is accessed in the development environment.
 
+**Local reliability gate:** The pure Kotlin revision planner checks the complete
+parent graph for missing ancestors, duplicate IDs and cycles (including cycles
+outside the apparent remote heads). A saved checkpoint is trusted only when
+both its revision ID and recorded playlist digest match remote history.
+Regression tests cover two-device forks, explicit merge, corrupted revisions
+and inconsistent checkpoints. These unit tests do not prove an Android OAuth
+session, remote upload or device-to-device restoration.
+
 ## Required setup to test Google authorization
 
 1. In [Google Cloud Console](https://console.cloud.google.com/apis/library/drive.googleapis.com), enable **Google Drive API** in a Cloud project under the publisher's control.

@@ -76,4 +76,51 @@ class CloudSyncPlannerTest {
         assertEquals(CloudSyncAction.CONFLICT, decide("hash-a", checkpoint,
             listOf(root.copy(playlistId = "other"))).action)
     }
+
+    @Test fun disconnectedCycleCannotHideBehindOtherwiseValidHead() {
+        val cycleA = CloudRevision("playlist-1", "rev-x", listOf("rev-y"), "hash-x")
+        val cycleB = CloudRevision("playlist-1", "rev-y", listOf("rev-x"), "hash-y")
+        val corrupt = listOf(root, cycleA, cycleB)
+        // The earlier head-only algorithm ignored this disconnected corrupt
+        // component and considered rev-a a safe head.
+        assertNull(CloudSyncPlanner.heads(corrupt))
+        assertEquals(CloudSyncAction.CONFLICT, decide("hash-a", checkpoint, corrupt).action)
+    }
+
+    @Test fun checkpointDigestMustMatchAcknowledgedRevision() {
+        val changedRoot = root.copy(playlistDigest = "tampered")
+        assertEquals(CloudSyncAction.CONFLICT,
+            decide("hash-a", checkpoint, listOf(changedRoot)).action)
+        val next = root.copy(
+            revisionId = "rev-b", parents = listOf("rev-a"), playlistDigest = "hash-b",
+        )
+        assertEquals(CloudSyncAction.CONFLICT,
+            decide("hash-a", checkpoint, listOf(changedRoot, next)).action)
+        // Valid ancestors and an unchanged digest still allow ordinary download.
+        assertEquals(CloudSyncAction.DOWNLOAD,
+            decide("hash-a", checkpoint, listOf(root, next)).action)
+    }
+
+    @Test fun completeRevisionGraphHasOneHeadAfterExplicitConflictMerge() {
+        val deviceA = root.copy(
+            revisionId = "rev-b", parents = listOf("rev-a"), playlistDigest = "hash-b",
+        )
+        val deviceB = root.copy(
+            revisionId = "rev-c", parents = listOf("rev-a"), playlistDigest = "hash-c",
+        )
+        assertEquals(CloudSyncAction.CONFLICT,
+            decide("hash-a", checkpoint, listOf(root, deviceA, deviceB)).action)
+        val resolved = root.copy(
+            revisionId = "rev-d", parents = listOf("rev-b", "rev-c"),
+            playlistDigest = "hash-resolved",
+        )
+        val mergedHistory = listOf(root, deviceA, deviceB, resolved)
+        assertEquals(listOf(resolved), CloudSyncPlanner.heads(mergedHistory))
+        assertEquals(CloudSyncAction.DOWNLOAD,
+            decide("hash-a", checkpoint, mergedHistory).action)
+        assertEquals(CloudSyncAction.NONE,
+            decide("hash-resolved", CloudCheckpoint("rev-d", "hash-resolved"),
+                mergedHistory).action)
+    }
+
 }

@@ -70,9 +70,32 @@ object CloudSyncPlanner {
                     item.parents.any { parent -> parent == item.revisionId || parent !in byId } ||
                     item.parents.any { byId.getValue(it).playlistId != item.playlistId }
             }) return null
-        val ancestors = revisions.flatMap { it.parents }.toSet()
+        // Every revision must be reachable from a valid root. Counting only
+        // visible heads is insufficient: a disconnected cycle could otherwise
+        // be silently ignored while a valid head still exists.
+        val dependents = HashMap<String, MutableList<String>>()
+        val remainingParents = HashMap<String, Int>()
+        revisions.forEach { revision ->
+            remainingParents[revision.revisionId] = revision.parents.size
+            revision.parents.forEach { parent ->
+                dependents.getOrPut(parent) { mutableListOf() }.add(revision.revisionId)
+            }
+        }
+        val ready = java.util.ArrayDeque<String>()
+        remainingParents.forEach { (id, count) -> if (count == 0) ready.addLast(id) }
+        var visited = 0
+        while (ready.isNotEmpty()) {
+            val parentId = ready.removeFirst()
+            visited++
+            dependents[parentId].orEmpty().forEach { childId ->
+                val pending = remainingParents.getValue(childId) - 1
+                remainingParents[childId] = pending
+                if (pending == 0) ready.addLast(childId)
+            }
+        }
+        if (visited != revisions.size) return null // cycle, even in a side branch
+        val ancestors = dependents.keys
         val current = revisions.filterNot { it.revisionId in ancestors }
-        // A malformed cycle has no head. Missing history cannot be trusted.
         return current.takeIf { it.isNotEmpty() }
     }
 
@@ -92,8 +115,21 @@ object CloudSyncPlanner {
         // Explicit deletion/tombstone is not applied automatically.
         if (remote?.deleted == true)
             return CloudSyncDecision(CloudSyncAction.CONFLICT, heads, "Playlist cancellata sul cloud")
-        if (checkpoint != null && revisions.none { it.revisionId == checkpoint.revisionId })
-            return CloudSyncDecision(CloudSyncAction.CONFLICT, heads, "Revisioni cloud mancanti")
+        if (checkpoint != null) {
+            val acknowledged = revisions.firstOrNull {
+                it.revisionId == checkpoint.revisionId
+            } ?: return CloudSyncDecision(
+                CloudSyncAction.CONFLICT, heads, "Revisioni cloud mancanti",
+            )
+            // A checkpoint is bound to BOTH revision and content. A remote
+            // document with the same ID but different digest must never be
+            // treated as an unchanged version, even when the head matches.
+            if (acknowledged.playlistDigest != checkpoint.playlistDigest ||
+                acknowledged.deleted
+            ) return CloudSyncDecision(
+                CloudSyncAction.CONFLICT, heads, "Checkpoint cloud non corrispondente",
+            )
+        }
         if (checkpoint == null) {
             val action = when {
                 localDigest == null && remote == null -> CloudSyncAction.NONE
