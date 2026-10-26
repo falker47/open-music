@@ -2,12 +2,18 @@ package app.openmusic
 
 import android.content.ComponentName
 import android.net.Uri
+import android.graphics.BitmapFactory
+import android.media.MediaMetadataRetriever
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -18,7 +24,12 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -48,6 +59,7 @@ private val Muted = Color(0xFFB4C4C8)
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(
                 background = Background, surface = Surface,
@@ -84,6 +96,9 @@ private fun OpenMusicApp() {
     var playing by remember { mutableStateOf(false) }
     var position by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
+    var currentUri by remember { mutableStateOf<Uri?>(null) }
+    var artwork by remember { mutableStateOf<ImageBitmap?>(null) }
+    var showNowPlaying by rememberSaveable { mutableStateOf(false) }
     val selected = playlists.firstOrNull { it.playlistId == selectedId }
     val matches = remember(selected, localCopies) {
         selected?.let { PlaylistMatcher.resolve(it, localCopies) }.orEmpty()
@@ -345,6 +360,7 @@ private fun OpenMusicApp() {
                 val metadata = active.mediaMetadata
                 nowTitle = metadata.title?.toString().orEmpty()
                 nowArtist = metadata.artist?.toString().orEmpty()
+                currentUri = active.currentMediaItem?.localConfiguration?.uri
                 playing = active.isPlaying
                 // Reflect seek/skip and Activity reconnection immediately, rather than
                 // leaving the progress bar on its prior track until the 750 ms tick.
@@ -374,6 +390,16 @@ private fun OpenMusicApp() {
         } else {
             position = 0L
             duration = 0L
+        }
+    }
+
+    // Decode embedded local artwork only for the expanded player, off the UI thread.
+    // Do not alter ExoPlayer buffering or speculate about OEM media-card animation.
+    LaunchedEffect(currentUri, showNowPlaying) {
+        artwork = null
+        val uri = currentUri
+        if (showNowPlaying && uri != null) {
+            artwork = readEmbeddedArtwork(context, uri)
         }
     }
 
@@ -429,24 +455,42 @@ private fun OpenMusicApp() {
         )
     }
 
+    BackHandler(enabled = showNowPlaying) { showNowPlaying = false }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         containerColor = Background,
+        contentWindowInsets = WindowInsets.safeDrawing,
         bottomBar = {
-            if (nowTitle.isNotEmpty()) {
-                PlayerBar(
-                    title = nowTitle, artist = nowArtist, playing = playing,
-                    progress = if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f,
-                    onSeek = { fraction ->
-                        player?.let { if (duration > 0L) it.seekTo((fraction * duration).toLong()) }
-                    },
-                    onBack = { player?.let { if (it.hasPreviousMediaItem()) it.seekToPreviousMediaItem() } },
-                    onPlayPause = { player?.let { if (it.isPlaying) it.pause() else it.play() } },
-                    onNext = { player?.let { if (it.hasNextMediaItem()) it.seekToNextMediaItem() } },
-                )
+            if (!showNowPlaying && nowTitle.isNotEmpty()) {
+                // Edge-to-edge makes the system nav area part of the window.
+                // Keep the mini-player and seek slider ABOVE three-button/gesture navigation.
+                Box(Modifier.fillMaxWidth().navigationBarsPadding()) {
+                    PlayerBar(
+                        title = nowTitle, artist = nowArtist, playing = playing,
+                        positionMs = position, durationMs = duration,
+                        onOpen = { showNowPlaying = true },
+                        onSeek = { millis -> player?.seekTo(millis) },
+                        onBack = { player?.let { if (it.hasPreviousMediaItem()) it.seekToPreviousMediaItem() } },
+                        onPlayPause = { player?.let { if (it.isPlaying) it.pause() else it.play() } },
+                        onNext = { player?.let { if (it.hasNextMediaItem()) it.seekToNextMediaItem() } },
+                    )
+                }
             }
         },
     ) { safeArea ->
+        if (showNowPlaying && nowTitle.isNotEmpty()) {
+            NowPlayingScreen(
+                modifier = Modifier.fillMaxSize().padding(safeArea),
+                title = nowTitle, artist = nowArtist, artwork = artwork,
+                playing = playing, positionMs = position, durationMs = duration,
+                onClose = { showNowPlaying = false },
+                onSeek = { millis -> player?.seekTo(millis) },
+                onBack = { player?.let { if (it.hasPreviousMediaItem()) it.seekToPreviousMediaItem() } },
+                onPlayPause = { player?.let { if (it.isPlaying) it.pause() else it.play() } },
+                onNext = { player?.let { if (it.hasNextMediaItem()) it.seekToNextMediaItem() } },
+            )
+        } else {
         Column(Modifier.fillMaxSize().padding(safeArea).padding(horizontal = 16.dp)) {
             Spacer(Modifier.height(12.dp))
             Text("Open Music", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
@@ -599,6 +643,7 @@ private fun OpenMusicApp() {
                 }
             }
         }
+        }
     }
 }
 
@@ -618,30 +663,148 @@ private fun AudioRow(file: AudioFile, onPlay: () -> Unit, onAdd: () -> Unit) {
     }
 }
 
+/**
+ * Both surfaces read from the same MediaController snapshot. A completed drag issues
+ * a single seek; tick updates cannot overwrite the thumb while the user drags.
+ */
+@Composable
+private fun PlaybackSeek(
+    trackKey: String,
+    positionMs: Long,
+    durationMs: Long,
+    onSeek: (Long) -> Unit,
+) {
+    var dragFraction by remember(trackKey) { mutableStateOf<Float?>(null) }
+    val actualFraction = if (durationMs > 0L)
+        (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
+    Slider(
+        value = dragFraction ?: actualFraction,
+        onValueChange = { dragFraction = it },
+        onValueChangeFinished = {
+            dragFraction?.let { if (durationMs > 0L) onSeek((it * durationMs).toLong()) }
+            dragFraction = null
+        },
+        enabled = durationMs > 0L,
+        modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp),
+    )
+}
+
 @Composable
 private fun PlayerBar(
-    title: String, artist: String, playing: Boolean, progress: Float,
-    onSeek: (Float) -> Unit, onBack: () -> Unit,
+    title: String, artist: String, playing: Boolean,
+    positionMs: Long, durationMs: Long, onOpen: () -> Unit,
+    onSeek: (Long) -> Unit, onBack: () -> Unit,
     onPlayPause: () -> Unit, onNext: () -> Unit,
 ) {
     SurfaceBox {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
+                Column(
+                    Modifier.weight(1f).clickable(onClick = onOpen)
+                        .padding(vertical = 10.dp),
+                ) {
                     Text(title, fontWeight = FontWeight.SemiBold, maxLines = 1,
                         overflow = TextOverflow.Ellipsis)
-                    Text(artist, color = Muted, style = MaterialTheme.typography.bodySmall,
-                        maxLines = 1)
+                    Text(artist.ifBlank { "Artista sconosciuto" }, color = Muted,
+                        style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                    Text("Apri In riproduzione", color = Accent,
+                        style = MaterialTheme.typography.labelSmall)
                 }
                 TextButton(onClick = onBack) { Text("◀◀") }
                 TextButton(onClick = onPlayPause) { Text(if (playing) "Pausa" else "Play") }
                 TextButton(onClick = onNext) { Text("▶▶") }
             }
-            Slider(value = progress, onValueChange = onSeek,
-                modifier = Modifier.fillMaxWidth().height(20.dp))
+            PlaybackSeek(title, positionMs, durationMs, onSeek)
         }
     }
 }
+
+@Composable
+private fun NowPlayingScreen(
+    modifier: Modifier, title: String, artist: String, artwork: ImageBitmap?,
+    playing: Boolean, positionMs: Long, durationMs: Long,
+    onClose: () -> Unit, onSeek: (Long) -> Unit,
+    onBack: () -> Unit, onPlayPause: () -> Unit, onNext: () -> Unit,
+) {
+    Column(
+        modifier.verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = onClose) { Text("‹ Libreria") }
+            Spacer(Modifier.weight(1f))
+            Text("In riproduzione", style = MaterialTheme.typography.titleMedium)
+        }
+        Spacer(Modifier.height(18.dp))
+        Box(
+            modifier = Modifier.fillMaxWidth().widthIn(max = 360.dp)
+                .aspectRatio(1f).clip(RoundedCornerShape(16.dp))
+                .background(Surface),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (artwork != null) {
+                Image(bitmap = artwork, contentDescription = "Copertina del brano",
+                    modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            } else {
+                Text("Copertina non disponibile", color = Muted)
+            }
+        }
+        Spacer(Modifier.height(24.dp))
+        Text(title, style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold, maxLines = 2,
+            overflow = TextOverflow.Ellipsis)
+        Text(artist.ifBlank { "Artista sconosciuto" }, color = Muted,
+            style = MaterialTheme.typography.bodyMedium)
+        Spacer(Modifier.height(16.dp))
+        PlaybackSeek(title, positionMs, durationMs, onSeek)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(formatPlaybackTime(positionMs), color = Muted)
+            Text(if (durationMs > 0L) formatPlaybackTime(durationMs) else "--:--",
+                color = Muted)
+        }
+        Spacer(Modifier.height(16.dp))
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedButton(onClick = onBack) { Text("◀◀ Precedente") }
+            Button(onClick = onPlayPause) { Text(if (playing) "Pausa" else "Play") }
+            OutlinedButton(onClick = onNext) { Text("Successivo ▶▶") }
+        }
+    }
+}
+
+private fun formatPlaybackTime(ms: Long): String {
+    val seconds = ms.coerceAtLeast(0L) / 1_000L
+    return if (seconds >= 3600L) "%d:%02d:%02d".format(
+        seconds / 3600L, (seconds / 60L) % 60L, seconds % 60L,
+    ) else "%d:%02d".format(seconds / 60L, seconds % 60L)
+}
+
+/** Only local file metadata; never downloads audio or artwork from cloud providers. */
+private suspend fun readEmbeddedArtwork(context: android.content.Context, uri: Uri): ImageBitmap? =
+    withContext(Dispatchers.IO) {
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(context, uri)
+            val bytes = retriever.embeddedPicture ?: return@withContext null
+            if (bytes.size > 5_000_000) return@withContext null
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            var sampleSize = 1
+            while (maxOf(bounds.outWidth, bounds.outHeight) / sampleSize > 720) {
+                sampleSize *= 2
+            }
+            val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)?.asImageBitmap()
+        } catch (_: RuntimeException) {
+            null
+        } finally {
+            retriever.release()
+        }
+    }
 
 @Composable
 private fun SurfaceBox(content: @Composable () -> Unit) {

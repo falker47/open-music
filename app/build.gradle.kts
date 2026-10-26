@@ -3,7 +3,25 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+// GitHub-hosted runners have different default debug keys. Only a user-owned,
+ // persistent QA keystore (in GitHub Actions secrets) can guarantee continuity.
+val qaKeystore = System.getenv("QA_KEYSTORE_PATH")
+val qaStorePassword = System.getenv("QA_KEYSTORE_PASSWORD")
+val qaKeyAlias = System.getenv("QA_KEY_ALIAS")
+val qaKeyPassword = System.getenv("QA_KEY_PASSWORD")
+
 android {
+    signingConfigs {
+        getByName("debug") {
+            if (listOf(qaKeystore, qaStorePassword, qaKeyAlias, qaKeyPassword)
+                    .all { !it.isNullOrBlank() }) {
+                storeFile = file(qaKeystore!!)
+                storePassword = qaStorePassword!!
+                keyAlias = qaKeyAlias!!
+                keyPassword = qaKeyPassword!!
+            }
+        }
+    }
     namespace = "app.openmusic"
     compileSdk = 36
 

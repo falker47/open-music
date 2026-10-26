@@ -34,7 +34,19 @@ Android-first, local-first music player with portable playlists independent of f
 
 ## Getting a QA APK
 
-**Open Music is developed in a public GitHub repository** (confirmed by the owner on 26 October 2026). When [Android build and core tests](../../actions/workflows/android.yml) succeeds on a feature-branch push, the job creates a **public experimental QA prerelease** and attaches `app-debug.apk`. Anyone may view and download the asset from **Assets**; GitHub sign-in is not required for a public release. These are **debug test builds**, not a stable app, Play Store listing or approval to merge the draft PR into `main`. Draft releases were discontinued for QA distribution because GitHub Mobile can show them as empty even with an uploaded APK. GitHub Actions artifacts are not used while the account's artifact storage quota is exhausted. Verify both CI and actual accessibility of the APK on the tester's device. Preserve existing app data: avoid uninstalling a previous version merely to install a new QA build; APK signing continuity is a separate open QA gate.
+QA distribution now has two mandatory gates: the repository must be **private**
+and the owner must configure a **persistent QA signing certificate** using GitHub
+Actions secrets (see [Android QA instructions](docs/ANDROID_MEDIA_QA.md)).
+GitHub Actions still compile and test debug builds without those secrets, but
+**will not publish a new QA APK**. Previous public debug APKs may have different
+GitHub runner certificates; Android then rejects an in-place upgrade. Do not
+uninstall an older APK to work around a signature mismatch until playlists
+have been exported to portable JSON v1. A backup is essential before the first
+stable-key migration; no automatic recovery of lost app-private files is promised.
+
+The source repository was public at the time this guard was added. Its
+visibility must be checked live before distribution. PR #1 remains draft;
+nothing here publishes to the Play Store or authorizes a merge.
 
 Android Studio can import this Gradle project. In CI we use the pinned Gradle distribution (no unverified Gradle wrapper binary is committed):
 

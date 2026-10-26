@@ -26,3 +26,18 @@ If audio changes promptly while the system card animates late, consider System U
 ## Scope
 
 Existing JSON v1, local-only scanning, playlist persistence rules, matching/anti-duplicates and the service-owned ExoPlayer remain unchanged. This QA build improves the Compose progress/title reflection on Media3 events and adds debug logs only; it does **not** claim a fix for OEM lock-screen visibility or measured notification response time. No device QA result is implied by CI success.
+
+## Navigation / expanded player / artwork (next device gate)
+
+- Install **in-place**, only if the installed APK certificate matches the QA certificate. If Android refuses the update, **do not uninstall** until every playlist is exported to portable JSON v1. An uninstall clears private app data; `Playlist · 0` alone does not establish whether this occurred or a separate persistence bug exists. Old GitHub runner debug keys cannot be reconstructed from an APK.
+- Test with **three-button navigation**: the mini-player and its seek thumb must sit completely above the system navigation area; drag to 25% and 75% and verify audible position. Repeat with **gesture navigation**. Do not hide system controls.
+- Tap the mini-player title: **In riproduzione** opens. Check current title, artist, artwork if embedded locally, seek position/duration, play/pause, previous/next, system Back and **Libreria** return. Test after Home/reopening the Activity while audio keeps playing.
+- Play two local tracks with different embedded covers. `OpenMusicPlayback` now traces `track_transition` and `metadata_changed art_data/art_uri` with monotonic timestamps, but neither proves when the OEM System UI draws the media card. If the card lags and metadata was already current, capture a screen recording for device-side diagnosis. No ExoPlayer tuning or artificial lock-screen overlay is included.
+- Verify **Rock** and **aq** after closing/reopening without uninstall. Backup each playlist with **Esporta** before any signing migration. A first new stable-key build may require one explicit migration reinstall if the previous debug certificate differs, and this may destroy unexported local data.
+
+## Stable QA signing gate (no key in source)
+
+The push workflow always compiles/tests. It publishes a QA prerelease **only when the repository is private and all four GitHub Actions secrets are available**:
+`OPEN_MUSIC_QA_KEYSTORE_B64` (base64 of a user-owned, securely backed-up JKS),
+`OPEN_MUSIC_QA_STORE_PASSWORD`, `OPEN_MUSIC_QA_KEY_ALIAS`, and `OPEN_MUSIC_QA_KEY_PASSWORD`.
+The keystore is reconstructed into runner temporary storage, not committed or uploaded as a build artifact. Preserve it long term: losing the key requires a new migration. The old GitHub default debug certificate cannot be assumed equal to the new key. CI PASS without a released signed APK is **not** an on-device PASS. GitHub Actions artifacts remain disabled due to quota.

@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -81,6 +82,12 @@ class PlaybackService : MediaSessionService() {
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 qaTrace("track_transition reason=$reason index=${servicePlayer.currentMediaItemIndex}")
+            }
+
+            override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) {
+                // Paired with track_transition timestamps: determines whether artwork
+                // reaches Media3 late, not whether Android System UI paints it late.
+                qaTrace("metadata_changed art_data=${mediaMetadata.artworkData?.size ?: 0} art_uri=${mediaMetadata.artworkUri != null}")
             }
 
             override fun onPlayerError(error: PlaybackException) {

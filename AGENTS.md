@@ -14,7 +14,7 @@ CI uses Gradle 8.13, JDK 17, Android API 36 and runs:
 gradle :core:test :app:assembleDebug --no-daemon --stacktrace
 ~~~
 
-Check core tests and the downloadable QA prerelease APK asset against the exact pushed commit; GitHub Actions artifact quota is exhausted. **Open Music is intentionally a public GitHub repository (owner decision, 26 October 2026).** Published prereleases and their debug APK assets are public, experimental QA artifacts, not Play Store or stable production releases. Never commit secrets, private audio, signing keys or personal device data. Keep PR #1 draft and do not merge to `main` until the explicit QA gate. Device testing is a separate gate.
+Check core tests and any downloadable QA prerelease APK against the exact pushed commit; GitHub Actions artifact quota is exhausted. Before any next QA distribution the owner requested **private repository visibility** and a **persistent owner-controlled QA signing key** in GitHub Actions secrets. The build must still work without secrets but publication must be skipped until both gates pass. The previous public debug APK signer cannot be assumed reusable: tell testers to export playlist JSON v1 before any reinstall. Never commit secrets, private audio, signing keys or personal device data. Keep PR #1 draft and do not merge to `main` until the explicit QA gate. Device testing is separate.
 
 Source boundaries:
 - core/src/main/kotlin: pure matching engine and portable models.
