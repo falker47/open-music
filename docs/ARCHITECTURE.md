@@ -14,9 +14,14 @@ Working playlists are saved to app-private JSON with Android AtomicFile. A dupli
 
 Manual additions are idempotent within each playlist for a matching SHA-256 content digest. An already present recording produces feedback without changing playlist entries or timestamps; the same recording is allowed in another playlist. Imported legacy duplicates are preserved in their original order for portable v1 compatibility. Metadata-only similarity never blocks a distinct file.
 
-## Cloud metadata synchronization — proposed, not implemented
+## Cloud metadata synchronization — manual Google Drive increment
 
-See [cloud metadata milestone](CLOUD_METADATA_SYNC_MILESTONE.md): portable playlist JSON v1 unchanged, immutable versioned snapshots, journal, conflict-aware convergence, Google Drive vs pCloud. No OAuth or remote media in this build.
+The Android client now has an opt-in Google Drive appDataFolder adapter and a
+separate atomic revision journal, with core-only conflict planning and immutable
+portable JSON v1 snapshots. Read [OAuth setup and device QA](GOOGLE_DRIVE_SYNC.md)
+and the [provider-independent roadmap](CLOUD_METADATA_SYNC_MILESTONE.md).
+CI checks compilation, **not** a real OAuth grant, upload or multi-device convergence.
+No always-on background synchronization, pCloud adapter or remote media playback.
 
 ## Direct cloud music playback — proposed, not implemented
 

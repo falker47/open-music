@@ -76,6 +76,8 @@ private fun OpenMusicApp() {
     val snackbar = remember { SnackbarHostState() }
     val storage = remember { PlaylistStorage(context.applicationContext) }
     val kindStorage = remember { ManualAudioStorage(context.applicationContext) }
+    val cloudCoordinator = remember { CloudSyncCoordinator(context.applicationContext) }
+    val cloudJournal = remember { CloudJournalStorage(context.applicationContext) }
     val artworkCache = remember { LocalArtworkCache() }
     val hashCache = remember { MediaHashCache(context.applicationContext) }
     val playlistWriteMutex = remember { Mutex() }
@@ -98,6 +100,13 @@ private fun OpenMusicApp() {
     var tab by remember { mutableIntStateOf(0) }
     var search by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf("") }
+    var localLoaded by remember { mutableStateOf(false) }
+    var cloudLinked by remember {
+        mutableStateOf(runCatching { cloudJournal.load().binding != null }.getOrDefault(false))
+    }
+    var cloudChoices by remember { mutableStateOf(emptyMap<String, CloudResolution>()) }
+    var cloudConflicts by remember { mutableStateOf(emptyList<CloudConflict>()) }
+    var showCloudDisconnect by remember { mutableStateOf(false) }
     var createDialog by remember { mutableStateOf(false) }
     var pendingAdd by remember { mutableStateOf<AudioFile?>(null) }
     var pendingHash by remember { mutableStateOf<String?>(null) }
@@ -241,6 +250,78 @@ private fun OpenMusicApp() {
                 busy = ""
             }
         }
+    }
+
+    // Authorization and transfers run only after the user taps the cloud action.
+    fun runCloudSync(grant: String) {
+        if (busy.isNotEmpty() || !localLoaded) return
+        busy = "Google Drive · sincronizzazione dei metadati"
+        scope.launch {
+            try {
+                playlistWriteMutex.withLock {
+                    val result = withContext(Dispatchers.IO) {
+                        cloudCoordinator.sync(grant, cloudChoices)
+                    }
+                    cloudLinked = withContext(Dispatchers.IO) {
+                        cloudJournal.load().binding != null
+                    }
+                    if (result.conflicts.isNotEmpty()) {
+                        cloudConflicts = result.conflicts
+                        notifyUser("Conflitti cloud: scegli quale versione conservare")
+                    } else {
+                        playlists = result.playlists
+                        if (selectedId == null || result.playlists.none { it.playlistId == selectedId })
+                            selectedId = result.playlists.firstOrNull()?.playlistId
+                        cloudChoices = emptyMap()
+                        cloudConflicts = emptyList()
+                        if (result.downloaded > 0 && audioFiles.isNotEmpty()) {
+                            reconcile(audioFiles, "sincronizzazione cloud")
+                        } else {
+                            refreshMatches(playlists, localCopies)
+                        }
+                        notifyUser("Google Drive · " + result.uploaded + " caricate, " +
+                            result.downloaded + " ricevute, " + result.adopted + " già allineate")
+                    }
+                }
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (failure: Exception) {
+                cloudChoices = emptyMap()
+                cloudConflicts = emptyList()
+                notifyUser("Sincronizzazione cloud non riuscita: " +
+                    (failure.localizedMessage ?: "riprova"))
+            } finally {
+                busy = ""
+            }
+        }
+    }
+
+    val requestDriveAccess = rememberDriveAccess(
+        onAuthorized = { token -> runCloudSync(token) },
+        onError = { error -> notifyUser(error) },
+    )
+    val revokeDriveAccess = rememberDriveRevocation(
+        onRevoked = {
+            scope.launch {
+                try {
+                    withContext(Dispatchers.IO) { cloudCoordinator.disconnect() }
+                    cloudLinked = false
+                    cloudChoices = emptyMap()
+                    cloudConflicts = emptyList()
+                    notifyUser("Account Google Drive scollegato · playlist locali intatte")
+                } catch (failure: Exception) {
+                    notifyUser("Scollegamento locale non riuscito: " +
+                        (failure.localizedMessage ?: "errore"))
+                }
+            }
+        },
+        onError = { error -> notifyUser(error) },
+    )
+    fun resolveCloud(choice: CloudResolution) {
+        val conflict = cloudConflicts.firstOrNull() ?: return
+        cloudChoices = cloudChoices + (conflict.playlistId to choice)
+        cloudConflicts = cloudConflicts.drop(1)
+        if (cloudConflicts.isEmpty()) requestDriveAccess()
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -470,6 +551,7 @@ private fun OpenMusicApp() {
             playlists = withContext(Dispatchers.IO) { storage.load() }
             manualKinds = withContext(Dispatchers.IO) { kindStorage.load() }
             selectedId = playlists.firstOrNull()?.playlistId
+            localLoaded = true
         } catch (failure: Exception) {
             notifyUser("Archivio locale non leggibile: " + (failure.localizedMessage ?: "errore"))
         }
@@ -656,6 +738,38 @@ private fun OpenMusicApp() {
         )
     }
 
+    if (cloudConflicts.isNotEmpty()) {
+        CloudConflictDialog(
+            conflict = cloudConflicts.first(),
+            onResolve = { resolveCloud(it) },
+            onCancel = {
+                cloudConflicts = emptyList()
+                cloudChoices = emptyMap()
+            },
+        )
+    }
+    if (showCloudDisconnect) {
+        AlertDialog(
+            onDismissRequest = { showCloudDisconnect = false },
+            title = { Text("Scollegare Google Drive?") },
+            text = {
+                Text("Le playlist sul telefono e le revisioni già sincronizzate su Drive " +
+                    "rimangono intatte. L'autorizzazione verrà revocata.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showCloudDisconnect = false
+                    revokeDriveAccess()
+                }) { Text("Scollega") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCloudDisconnect = false }) {
+                    Text("Annulla")
+                }
+            },
+        )
+    }
+
     BackHandler(enabled = showNowPlaying) { showNowPlaying = false }
     val musicCount = remember(audioFiles, manualKinds) {
         audioFiles.count { AudioClassification.isMusic(it.isMusic, it.stamp(), manualKinds) }
@@ -827,6 +941,31 @@ private fun OpenMusicApp() {
                                         contentDescription = null, modifier = Modifier.size(20.dp))
                                     Spacer(Modifier.width(3.dp))
                                     Text("Importa")
+                                }
+                            }
+                        }
+                        item {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                TextButton(
+                                    onClick = { requestDriveAccess() },
+                                    enabled = busy.isEmpty() && localLoaded,
+                                    modifier = Modifier.heightIn(min = 48.dp),
+                                ) {
+                                    Icon(androidx.compose.material.icons.Icons.Rounded.Cloud,
+                                        contentDescription = null, modifier = Modifier.size(20.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(if (cloudLinked) "Sincronizza Drive" else "Collega Google Drive")
+                                }
+                                if (cloudLinked) {
+                                    TextButton(
+                                        onClick = { showCloudDisconnect = true },
+                                        enabled = busy.isEmpty(),
+                                        modifier = Modifier.heightIn(min = 48.dp),
+                                    ) { Text("Scollega") }
                                 }
                             }
                         }

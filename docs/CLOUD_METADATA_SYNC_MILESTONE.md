@@ -1,6 +1,6 @@
 # Cloud metadata sync — technical milestone proposal
 
-**Status (26 October 2026): proposal, not running code.** Provider is not selected. There is no login/OAuth, automatic synchronization, uploaded audio, or cloud playback in this Android QA increment. Import/export through SAF remains distinct from synchronization.
+**Status (26 October 2026): manual Google Drive metadata-sync increment coded; OAuth and two-device QA pending. This roadmap also documents future pCloud/background extensions.** Provider is not selected. There is no login/OAuth, automatic synchronization, uploaded audio, or cloud playback in this Android QA increment. Import/export through SAF remains distinct from synchronization.
 
 ## Portable contract and offline authority
 
@@ -29,7 +29,7 @@ Official references:
 - https://docs.pcloud.com/methods/file/uploadfile.html
 - https://docs.pcloud.com/methods/revisions/listrevisions.html
 
-## Next gated engineering increment, after provider selection and Android UX QA
+## Subsequent engineering increments after manual Google Drive device QA
 
 1. Pure-core versioned snapshot/revision graph + journal format with two-device offline/concurrent-edit simulation and checksum/tombstone/conflict tests.
 2. A single provider adapter (Google Drive **or** pCloud) with explicit login/consent, list changes, fetch, immutable upload and disconnect; no automatic background network before opt-in.
