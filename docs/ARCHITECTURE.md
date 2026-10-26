@@ -16,7 +16,7 @@ Manual additions are idempotent within each playlist for a matching SHA-256 cont
 
 ## Cloud metadata synchronization — proposed, not implemented
 
-Store only versioned portable JSON (no music) in a user-selected provider. Authentication should use least-privilege scopes or SAF, OS-protected credentials, checksums, optimistic concurrency / ETags where supported, backups and user-visible conflicts. Never choose last-writer-wins silently.
+See [cloud metadata milestone](CLOUD_METADATA_SYNC_MILESTONE.md): portable playlist JSON v1 unchanged, immutable versioned snapshots, journal, conflict-aware convergence, Google Drive vs pCloud. No OAuth or remote media in this build.
 
 ## Direct cloud music playback — proposed, not implemented
 

@@ -20,6 +20,18 @@ object AudioClassification {
 
     fun reset(existing: Map<String, ManualAudioOverride>, uri: String) = existing - uri
 
+    /** Undo succeeds only for the same file stamp and the applied decision. */
+    fun undoIfCurrent(
+        existing: Map<String, ManualAudioOverride>,
+        item: AudioItemStamp,
+        applied: ManualAudioOverride,
+        previous: ManualAudioOverride?,
+    ): Map<String, ManualAudioOverride>? {
+        if (applied.stamp != item || existing[item.uri] != applied) return null
+        return if (previous?.stamp == item) existing + (item.uri to previous)
+            else reset(existing, item.uri)
+    }
+
     /** Removed/reused/modified MediaStore IDs must not inherit a manual decision. */
     fun retain(
         existing: Map<String, ManualAudioOverride>,

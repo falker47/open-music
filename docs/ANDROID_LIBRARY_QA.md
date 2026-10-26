@@ -36,3 +36,10 @@ missing determination.
 
 Report these measurements and test results; unreported scenarios remain open.
 Existing background playback QA cases remain separate.
+
+## Next device QA — compact playlists and audio classification (26 October 2026)
+
+1. With 0, 1 and 2+ playlists, check the single compact action row (Nuova/Importa), chips only with 2+, one playlist summary with accessible Ricollega/Esporta icons and tracks immediately below. Check mini-player, three-button/gesture navigation, long names, landscape/small screens and larger font scaling.
+2. Promote an item from Altri audio to Musica and demote one in the opposite direction. Confirm title-bearing Snackbar only after successful save; test Annulla, full restart and rescan. Files must never move or be deleted.
+3. Compare automatic classification of actual voice notes, recordings, podcasts, ringtones, notifications, music in Music folders without artist tags, tagged downloads, messenger-shared songs and a song whose title contains "Voice". Report false positives/negatives without sending private recordings.
+4. Import a portable JSON v1 playlist that references content shown in Altri audio; all local audio must still participate in SHA matching. Keep prior QA open: cold/warm cache, selective invalidation, renamed/moved audio, EXACT/MISSING/AMBIGUOUS, persistence and media controls. CI does not imply real-device PASS.

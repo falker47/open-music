@@ -12,20 +12,53 @@ data class AudioKindFlags(
 )
 
 object AudioKindPolicy {
-    fun likelyMusic(flags: AudioKindFlags, artist: String?, album: String?): Boolean {
-        // Explicit non-music categories win over IS_MUSIC and any misleading tags.
+    private val excludedFolders = setOf(
+        "podcast", "podcasts", "audiobook", "audiobooks", "recordings",
+        "voice recorder", "voice recorders", "voice notes", "whatsapp voice notes",
+        "telegram voice", "ringtones", "ringtone", "notifications", "notification",
+        "alarms", "alarm", "call recordings", "call recording",
+    )
+    private val musicFolders = setOf("music", "musica", "songs", "albums", "downloaded music")
+    private val recordedName = Regex(
+        """^(ptt[-_]|voice[-_ ]?(note|message|recording)[-_]|recording[-_](\d|20\d\d)|call[-_]?record|aud[-_]\d{8}[-_])""",
+        RegexOption.IGNORE_CASE,
+    )
+
+    private fun informative(value: String?): Boolean {
+        val normalized = value?.trim()?.lowercase().orEmpty()
+        return normalized.isNotEmpty() && normalized !in setOf(
+            "<unknown>", "unknown", "unknown artist", "unknown album",
+            "artista sconosciuto", "album sconosciuto", "artist", "album", "untitled",
+            "no artist", "no album", "null",
+        )
+    }
+
+    fun likelyMusic(
+        flags: AudioKindFlags,
+        artist: String?,
+        album: String?,
+        title: String? = null,
+        displayName: String? = null,
+        relativePath: String? = null,
+    ): Boolean {
         if (listOf(flags.podcast, flags.audiobook, flags.recording, flags.ringtone,
                 flags.notification, flags.alarm).any { it == true }) return false
-        if (flags.music == true) return true
-        // IS_MUSIC=0/unknown is common for legitimate tracks. Require BOTH credible
-        // tags before overriding it, not the extremely permissive artist OR album.
-        // Untagged singles remain discoverable under Altri audio; no duration cutoff.
-        fun tagged(value: String?): Boolean {
-            val trimmed = value?.trim().orEmpty()
-            return trimmed.isNotEmpty() && !trimmed.equals("<unknown>", true) &&
-                !trimmed.equals("unknown", true) &&
-                !trimmed.equals("artista sconosciuto", true)
+
+        val folders = relativePath.orEmpty().replace('\\', '/').lowercase()
+            .split('/').map { it.trim() }.filter { it.isNotEmpty() }
+        if (folders.any { it in excludedFolders }) return false
+        if (recordedName.containsMatchIn(displayName.orEmpty().trim())) return false
+
+        val artistTag = informative(artist)
+        val albumTag = informative(album)
+        val inMusicFolder = folders.any { it in musicFolders }
+        val messagingFolder = folders.any { folder ->
+            folder in setOf("whatsapp", "whatsapp audio", "telegram", "telegram audio",
+                "signal", "messenger", "viber")
         }
-        return tagged(artist) && tagged(album)
+        if (messagingFolder && !(artistTag && albumTag)) return false
+        if (artistTag && albumTag) return true
+        if (inMusicFolder) return true
+        return flags.music == true && (artistTag || (albumTag && informative(title)))
     }
 }

@@ -329,14 +329,49 @@ private fun OpenMusicApp() {
 
     fun setMusicClassification(file: AudioFile, music: Boolean) {
         scope.launch {
-            kindWriteMutex.withLock {
-                val updated = AudioClassification.set(manualKinds, file.stamp(), music)
+            val item = file.stamp()
+            val applied = ManualAudioOverride(item, music)
+            var previous: ManualAudioOverride? = null
+            val saved = kindWriteMutex.withLock {
+                if (audioFiles.none { it.stamp() == item }) return@withLock false
+                if (AudioClassification.isMusic(file.isMusic, item, manualKinds) == music)
+                    return@withLock false
+                previous = manualKinds[file.uri]
+                val updated = AudioClassification.set(manualKinds, item, music)
                 try {
                     withContext(Dispatchers.IO) { kindStorage.save(updated) }
                     manualKinds = updated
+                    true
                 } catch (failure: Exception) {
                     notifyUser("Classificazione non salvata: " +
                         (failure.localizedMessage ?: "errore"))
+                    false
+                }
+            }
+            if (!saved) return@launch
+
+            val message = if (music) "«" + file.title + "» aggiunta a Musica"
+                else "«" + file.title + "» spostata in Altri audio"
+            if (snackbar.showSnackbar(
+                    message, actionLabel = "Annulla", withDismissAction = true,
+                    duration = SnackbarDuration.Short,
+                ) == SnackbarResult.ActionPerformed) {
+                kindWriteMutex.withLock {
+                    if (audioFiles.none { it.stamp() == item }) {
+                        notifyUser("Il file è cambiato: classificazione non ripristinata")
+                        return@withLock
+                    }
+                    val restored = AudioClassification.undoIfCurrent(
+                        manualKinds, item, applied, previous,
+                    ) ?: return@withLock
+                    try {
+                        withContext(Dispatchers.IO) { kindStorage.save(restored) }
+                        manualKinds = restored
+                        notifyUser("Classificazione ripristinata: " + file.title)
+                    } catch (failure: Exception) {
+                        notifyUser("Annullamento non salvato: " +
+                            (failure.localizedMessage ?: "errore"))
+                    }
                 }
             }
         }
@@ -680,7 +715,7 @@ private fun OpenMusicApp() {
             Column(
                 Modifier.fillMaxSize().padding(insets).padding(horizontal = 18.dp),
             ) {
-                MusicHeader(if (tab == 0) visibleAudio.size else playlists.size, tab == 0)
+                if (tab == 0) MusicHeader(visibleAudio.size, isLibrary = true)
                 if (busy.isNotEmpty()) MusicBusyIndicator(
                     busy, onCancel = if (verifying) ({ analysisJob?.cancel() }) else null,
                 )
@@ -766,33 +801,32 @@ private fun OpenMusicApp() {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(bottom = 20.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         item {
-                            MusicSectionHeader(
-                                title = "Raccolte",
-                                subtitle = "Playlist locali e portabili",
-                            )
-                            Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                                Button(
-                                    onClick = { createDialog = true }, enabled = busy.isEmpty(),
-                                    modifier = Modifier.weight(1f),
-                                    contentPadding = PaddingValues(horizontal = 10.dp),
-                                ) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text("Playlist", style = MaterialTheme.typography.titleLarge,
+                                    modifier = Modifier.weight(1f))
+                                TextButton(onClick = { createDialog = true },
+                                    enabled = busy.isEmpty(),
+                                    modifier = Modifier.heightIn(min = 48.dp)) {
                                     Icon(androidx.compose.material.icons.Icons.Rounded.Add,
-                                        contentDescription = null, modifier = Modifier.size(19.dp))
-                                    Spacer(Modifier.width(5.dp))
-                                    Text("Nuova playlist", maxLines = 1)
+                                        contentDescription = null, modifier = Modifier.size(20.dp))
+                                    Spacer(Modifier.width(3.dp))
+                                    Text("Nuova")
                                 }
-                                OutlinedButton(
+                                TextButton(
                                     onClick = { importer.launch(arrayOf("application/json", "text/plain")) },
                                     enabled = busy.isEmpty(),
-                                    contentPadding = PaddingValues(horizontal = 11.dp),
+                                    modifier = Modifier.heightIn(min = 48.dp),
                                 ) {
                                     Icon(androidx.compose.material.icons.Icons.Rounded.FileUpload,
-                                        contentDescription = null, modifier = Modifier.size(19.dp))
-                                    Spacer(Modifier.width(5.dp))
-                                    Text("Importa", maxLines = 1)
+                                        contentDescription = null, modifier = Modifier.size(20.dp))
+                                    Spacer(Modifier.width(3.dp))
+                                    Text("Importa")
                                 }
                             }
                         }
@@ -832,7 +866,7 @@ private fun OpenMusicApp() {
                                 it.identity.metadata.title ?: it.identity.filenameHint ?: "Brano senza titolo"
                             } else emptyList()
                             item {
-                                MusicPlaylistHero(
+                                MusicPlaylistSummary(
                                     name = selected.name, trackCount = selected.tracks.size,
                                     available = available, busy = busy.isNotEmpty(),
                                     analyzing = verifying,
@@ -849,14 +883,9 @@ private fun OpenMusicApp() {
                                 )
                             }
                             if (latestAnalysis.isNotEmpty()) item {
-                                Text(latestAnalysis, color = Muted,
+                                Text(latestAnalysis, color = Muted, maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                     style = MaterialTheme.typography.labelSmall)
-                            }
-                            item {
-                                MusicSectionHeader(
-                                    title = "Brani nella playlist",
-                                    subtitle = "Tocca un brano disponibile per ascoltarlo",
-                                )
                             }
                             if (selected.tracks.isEmpty()) {
                                 item {

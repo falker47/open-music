@@ -407,83 +407,66 @@ internal fun MusicTrackRow(
 }
 
 @Composable
-internal fun MusicPlaylistHero(
+internal fun MusicPlaylistSummary(
     name: String, trackCount: Int, available: Int, busy: Boolean,
     analyzing: Boolean, needsVerification: Boolean, unreadableCount: Int,
     missingTitles: List<String>,
     onRelink: () -> Unit, onExport: () -> Unit,
 ) {
-    var expanded by remember(name) { mutableStateOf(false) }
+    var showMissing by remember(name) { mutableStateOf(false) }
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp), color = MusicPalette.surface,
+        shape = RoundedCornerShape(16.dp), color = MusicPalette.surface,
         border = BorderStroke(1.dp, MusicPalette.border),
     ) {
-        Column(Modifier.padding(18.dp)) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.size(58.dp).clip(RoundedCornerShape(17.dp))
-                        .background(Brush.linearGradient(listOf(Color(0xFF5E341E), Color(0xFF30221B)))),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.Rounded.PlaylistPlay, contentDescription = null,
-                        tint = MusicPalette.primary, modifier = Modifier.size(32.dp))
-                }
-                Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(name, style = MaterialTheme.typography.titleLarge,
-                        maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        if (analyzing) trackCount.toString() + " brani · " + available +
-                            " SHA confermati · verifica in corso"
-                        else trackCount.toString() + " brani · " + available + " disponibili",
-                        color = MusicPalette.muted, style = MaterialTheme.typography.bodySmall,
-                    )
+                    Text(name, style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    val detail = when {
+                        analyzing -> trackCount.toString() + " brani · " + available +
+                            " confermati · analisi"
+                        needsVerification -> trackCount.toString() + " brani · da verificare"
+                        else -> trackCount.toString() + " brani · " + available + " disponibili"
+                    }
+                    Text(detail, color = MusicPalette.muted,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                IconButton(onClick = onRelink, enabled = !busy,
+                    modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Rounded.Refresh,
+                        contentDescription = "Ricollega playlist " + name,
+                        tint = MusicPalette.primary)
+                }
+                IconButton(onClick = onExport, enabled = !busy,
+                    modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Rounded.FileDownload,
+                        contentDescription = "Esporta playlist " + name,
+                        tint = MusicPalette.primary)
                 }
             }
-            Spacer(Modifier.height(14.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = onRelink, enabled = !busy, modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(horizontal = 7.dp),
-                ) {
-                    Icon(Icons.Rounded.Refresh, contentDescription = null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(5.dp))
-                    Text("Ricollega", maxLines = 1)
-                }
-                OutlinedButton(
-                    onClick = onExport, enabled = !busy, modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(horizontal = 7.dp),
-                ) {
-                    Icon(Icons.Rounded.FileDownload, contentDescription = null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(5.dp))
-                    Text("Esporta", maxLines = 1)
-                }
-            }
-            if (analyzing || needsVerification || unreadableCount > 0) {
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    when {
-                        analyzing -> "Analisi in corso: verifica SHA-256 della libreria"
-                        unreadableCount > 0 -> "Da verificare: " + unreadableCount + " audio non leggibili. Riprova Ricollega."
-                        else -> "Da verificare · premi Ricollega per riprovare"
-                    },
-                    color = MusicPalette.warning, style = MaterialTheme.typography.labelMedium,
-                )
+            if (unreadableCount > 0 && !analyzing) {
+                Text(unreadableCount.toString() + " audio non leggibili · Ricollega per riprovare",
+                    style = MaterialTheme.typography.labelSmall, color = MusicPalette.warning)
             }
             if (missingTitles.isNotEmpty()) {
-                Spacer(Modifier.height(10.dp))
-                Text(missingTitles.size.toString() + " brani mancanti dopo la verifica",
-                    color = MusicPalette.warning, style = MaterialTheme.typography.labelMedium)
-                val shown = if (expanded) missingTitles else missingTitles.take(3)
-                shown.forEach { title ->
-                    Text("• " + title, color = MusicPalette.muted,
-                        style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = { showMissing = !showMissing },
+                    modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text(missingTitles.size.toString() + " mancanti · " +
+                        (if (showMissing) "Nascondi" else "Mostra dettagli"))
                 }
-                if (missingTitles.size > 3) {
-                    TextButton(onClick = { expanded = !expanded }) {
-                        Text(if (expanded) "Mostra meno" else "Mostra tutti i titoli mancanti")
+                if (showMissing) {
+                    missingTitles.take(12).forEach { missing ->
+                        Text("• " + missing, color = MusicPalette.muted,
+                            style = MaterialTheme.typography.bodySmall, maxLines = 1,
+                            overflow = TextOverflow.Ellipsis)
+                    }
+                    if (missingTitles.size > 12) {
+                        Text("E altri " + (missingTitles.size - 12) + " non trovati",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MusicPalette.muted)
                     }
                 }
             }

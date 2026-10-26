@@ -40,12 +40,30 @@ class AudioClassificationTest {
         )).isEmpty())
     }
 
-    @Test fun stricterTagFallbackButFlaggedMusicRemainsAvailable() {
-        assertFalse(AudioKindPolicy.likelyMusic(AudioKindFlags(music = false), "Artist", null))
-        assertTrue(AudioKindPolicy.likelyMusic(AudioKindFlags(music = false), "Artist", "Album"))
-        assertTrue(AudioKindPolicy.likelyMusic(AudioKindFlags(music = true), null, null))
-        assertFalse(AudioKindPolicy.likelyMusic(AudioKindFlags(music = true, podcast = true),
-            "Artist", "Album"))
+    @Test fun manualPromotionAndDemotionOverrideStricterAutomaticKind() {
+        val uncertain = AudioKindPolicy.likelyMusic(
+            AudioKindFlags(music = true), null, null, relativePath = "Download/")
+        assertFalse(uncertain)
+        val promoted = AudioClassification.set(emptyMap(), other, true)
+        assertTrue(AudioClassification.isMusic(uncertain, other, promoted))
+        val demoted = AudioClassification.set(promoted, music, false)
+        assertFalse(AudioClassification.isMusic(true, music, demoted))
+    }
+
+    @Test fun undoRestoresOldChoiceButRejectsStaleFileAndChangedState() {
+        val baseline = AudioClassification.set(emptyMap(), music, false)
+        val applied = ManualAudioOverride(music, true)
+        val changed = AudioClassification.set(baseline, music, true)
+        assertEquals(baseline, AudioClassification.undoIfCurrent(
+            changed, music, applied, baseline[music.uri]))
+        assertNull(AudioClassification.undoIfCurrent(
+            AudioClassification.set(changed, music, false), music, applied,
+            baseline[music.uri]))
+        assertNull(AudioClassification.undoIfCurrent(
+            changed, music.copy(sizeBytes = 999), applied, baseline[music.uri]))
+        val fresh = AudioClassification.set(emptyMap(), other, true)
+        assertTrue(AudioClassification.undoIfCurrent(
+            fresh, other, ManualAudioOverride(other, true), null)?.isEmpty() == true)
     }
 
     @Test fun searchIsIndependentOfCategoryAndPlaylistSelectionIsCompact() {

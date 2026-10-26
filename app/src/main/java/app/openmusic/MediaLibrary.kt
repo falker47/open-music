@@ -51,6 +51,8 @@ object MediaLibrary {
             MediaStore.Audio.Media.DURATION, MediaStore.Audio.Media.DISPLAY_NAME,
             MediaStore.Audio.Media.SIZE, MediaStore.Audio.Media.DATE_MODIFIED,
         )
+        val pathColumn = if (Build.VERSION.SDK_INT >= 29)
+            listOf(MediaStore.Audio.Media.RELATIVE_PATH) else emptyList()
         val categories = buildList {
             add(MediaStore.Audio.Media.IS_MUSIC)
             add(MediaStore.Audio.Media.IS_PODCAST)
@@ -105,7 +107,11 @@ object MediaLibrary {
                         number(MediaStore.Audio.Media.SIZE),
                         number(MediaStore.Audio.Media.DATE_MODIFIED),
                         if (artist != null && rawTitle != null) "tags" else "filename",
-                        AudioKindPolicy.likelyMusic(flags, artist, album),
+                        AudioKindPolicy.likelyMusic(
+                            flags, artist, album, title, fileName,
+                            if (Build.VERSION.SDK_INT >= 29)
+                                string(MediaStore.Audio.Media.RELATIVE_PATH) else null,
+                        ),
                     ))
                 }
             }
@@ -118,8 +124,11 @@ object MediaLibrary {
         else listOf(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI)
         return volumes.flatMap { volume ->
             // Older/OEM providers may not expose every classification flag.
-            try { read(volume, base + categories) }
-            catch (_: IllegalArgumentException) { read(volume, base) }
+            try { read(volume, base + pathColumn + categories) }
+            catch (_: IllegalArgumentException) {
+                try { read(volume, base + categories) }
+                catch (_: IllegalArgumentException) { read(volume, base) }
+            }
         }.sortedWith(compareBy({ it.title.lowercase() }, { it.artist.orEmpty().lowercase() }))
     }
 
