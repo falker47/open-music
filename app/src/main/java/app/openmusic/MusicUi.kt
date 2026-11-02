@@ -28,7 +28,7 @@ import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlaylistPlay
-import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SkipNext
@@ -442,11 +442,13 @@ internal fun MusicPlaylistSummary(
                         style = MaterialTheme.typography.bodySmall,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                IconButton(onClick = onRelink, enabled = !busy,
-                    modifier = Modifier.size(48.dp)) {
-                    Icon(Icons.Rounded.Refresh,
-                        contentDescription = "Ricollega playlist " + name,
-                        tint = MusicPalette.primary)
+                TextButton(onClick = onRelink, enabled = !busy,
+                    modifier = Modifier.heightIn(min = 48.dp),
+                    contentPadding = PaddingValues(horizontal = 4.dp)) {
+                    Icon(Icons.Rounded.Link, contentDescription = null,
+                        tint = MusicPalette.primary, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(3.dp))
+                    Text("Trova file", maxLines = 1)
                 }
                 TextButton(onClick = onExport, enabled = !busy,
                     modifier = Modifier.heightIn(min = 48.dp),
@@ -458,7 +460,7 @@ internal fun MusicPlaylistSummary(
                 }
             }
             if (unreadableCount > 0 && !analyzing) {
-                Text(unreadableCount.toString() + " audio non leggibili · Ricollega per riprovare",
+                Text(unreadableCount.toString() + " audio non leggibili · usa Trova file",
                     style = MaterialTheme.typography.labelSmall, color = MusicPalette.warning)
             }
             if (missingTitles.isNotEmpty()) {

@@ -25,14 +25,14 @@ internal fun CloudConflictDialog(
     }
     AlertDialog(
         onDismissRequest = onCancel,
-        title = { Text("Conflitto playlist") },
+        title = { Text("Versioni diverse") },
         text = {
             Column(Modifier.heightIn(max = 350.dp).verticalScroll(rememberScrollState())) {
                 Text(conflict.title, style = MaterialTheme.typography.titleMedium,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(conflict.reason, style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(12.dp))
-                Text("Seleziona la versione cloud da usare:",
+                Text("Versioni su Drive:",
                     style = MaterialTheme.typography.bodyMedium)
                 conflict.remoteHeads.forEachIndexed { index, head ->
                     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
@@ -46,34 +46,32 @@ internal fun CloudConflictDialog(
                             style = MaterialTheme.typography.bodySmall)
                     }
                 }
-                Text("La cronologia sul cloud non viene cancellata. La scelta è esplicita.",
-                    style = MaterialTheme.typography.bodySmall)
-            }
+             }
         },
         confirmButton = {
             Column {
                 if (conflict.hasLocal) {
                     TextButton(onClick = { choose(CloudConflictChoice.KEEP_LOCAL) },
                         modifier = Modifier.heightIn(min = 48.dp)) {
-                        Text("Mantieni locale e pubblica")
+                        Text("Usa playlist del telefono")
                     }
                 }
                 if (selectedRemote != null) {
                     TextButton(onClick = { choose(CloudConflictChoice.USE_REMOTE) },
                         modifier = Modifier.heightIn(min = 48.dp)) {
-                        Text("Usa versione cloud")
+                        Text("Usa Drive (sostituisce sul telefono)")
                     }
                     if (conflict.hasLocal) {
                         TextButton(onClick = { choose(CloudConflictChoice.DUPLICATE_LOCAL) },
                             modifier = Modifier.heightIn(min = 48.dp)) {
-                            Text("Mantieni entrambe (copia locale)")
+                            Text("Conserva entrambe")
                         }
                     }
                 }
             }
         },
         dismissButton = {
-            TextButton(onClick = onCancel) { Text("Annulla sincronizzazione") }
+            TextButton(onClick = onCancel) { Text("Più tardi") }
         },
     )
 }

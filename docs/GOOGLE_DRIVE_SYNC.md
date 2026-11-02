@@ -11,6 +11,15 @@ The first adapter uses **Google Drive**, deliberately choosing the narrow non-se
 - Local playback, editing, JSON import/export and playlist storage work offline with no Google consent.
 - Disconnect revokes OAuth access (Google may revoke all the app's granted scopes), erases the local cloud journal and leaves *both* local playlists and cloud snapshots intact.
 
+## What the Android interface means (2 November 2026)
+
+- **Trova file** in a playlist searches/rehashes local audio only; it never contacts Drive.
+- **Google Drive → Sincronizza** is the explicit two-way metadata transfer. After adding, removing, creating or importing a playlist, **"N playlist da sincronizzare"** persists until the local content is acknowledged in the durable cloud journal. An offline failure remains visible and can be retried with the same button; no local edit is discarded.
+- **"Nessuna modifica da salvare"** compares local data with the last acknowledged checkpoint, not with live remote state. Tap **Sincronizza** to check for edits from another installation.
+- Conflict resolution is always explicit. **Conserva entrambe** keeps the local version as a separate playlist; that new copy also needs a later sync. **Usa Drive** intentionally replaces the local version and the UI names that effect.
+- Automatic background uploads are deliberately **not** enabled yet: OAuth availability, offline retries and concurrent-device conflicts require further real-device QA. Local changes and the cloud journal survive normal app restarts; uninstalling still erases unsynced local data, so finish a sync or export JSON before uninstalling.
+- The status is local checkpoint state, not proof of a successful Drive fetch until a live test confirms it.
+
 ## First manual sync
 
 1. Read local playlists and private checkpoint journal; list **metadata only** from the Drive appData folder (pagination).

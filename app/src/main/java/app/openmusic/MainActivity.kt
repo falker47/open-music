@@ -104,9 +104,12 @@ private fun OpenMusicApp() {
     var search by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf("") }
     var localLoaded by remember { mutableStateOf(false) }
-    var cloudLinked by remember {
-        mutableStateOf(runCatching { cloudJournal.load().binding != null }.getOrDefault(false))
+    var cloudState by remember {
+        mutableStateOf(runCatching { cloudJournal.load() }.getOrDefault(CloudJournal()))
     }
+    val cloudLinked = cloudState.binding != null
+    var cloudSyncError by remember { mutableStateOf<String?>(null) }
+    var showCloudMenu by remember { mutableStateOf(false) }
     var cloudChoices by remember { mutableStateOf(emptyMap<String, CloudResolution>()) }
     var cloudConflicts by remember { mutableStateOf(emptyList<CloudConflict>()) }
     var showCloudDisconnect by remember { mutableStateOf(false) }
@@ -296,22 +299,21 @@ private fun OpenMusicApp() {
         }
     }
 
-    // Authorization and transfers run only after the user taps the cloud action.
+    // Explicit sync: local edits stay durable offline and are never auto-uploaded.
     fun runCloudSync(grant: String) {
         if (busy.isNotEmpty() || !localLoaded) return
-        busy = "Google Drive · sincronizzazione dei metadati"
+        cloudSyncError = null
+        busy = "Sincronizzazione Google Drive"
         scope.launch {
             try {
                 playlistWriteMutex.withLock {
                     val result = withContext(Dispatchers.IO) {
                         cloudCoordinator.sync(grant, cloudChoices)
                     }
-                    cloudLinked = withContext(Dispatchers.IO) {
-                        cloudJournal.load().binding != null
-                    }
+                    cloudState = withContext(Dispatchers.IO) { cloudJournal.load() }
                     if (result.conflicts.isNotEmpty()) {
                         cloudConflicts = result.conflicts
-                        notifyUser("Conflitti cloud: scegli quale versione conservare")
+                        notifyUser("Conflitto Drive: scegli quale versione conservare")
                     } else {
                         playlists = result.playlists
                         if (selectedId == null || result.playlists.none { it.playlistId == selectedId })
@@ -323,8 +325,17 @@ private fun OpenMusicApp() {
                         } else {
                             refreshMatches(playlists, localCopies)
                         }
-                        notifyUser("Google Drive · " + result.uploaded + " caricate, " +
-                            result.downloaded + " ricevute, " + result.adopted + " già allineate")
+                        val pending = CloudLocalSyncInspector.inspect(
+                            result.playlists, cloudState.checkpoints)
+                        notifyUser(when {
+                            pending.pendingCount > 0 ->
+                                "Drive aggiornato · altre playlist da sincronizzare: " +
+                                    pending.pendingCount
+                            result.uploaded == 0 && result.downloaded == 0 ->
+                                "Drive · nessuna modifica"
+                            else -> "Drive · " + result.uploaded + " salvate, " +
+                                result.downloaded + " ricevute"
+                        })
                     }
                 }
             } catch (cancel: CancellationException) {
@@ -332,9 +343,14 @@ private fun OpenMusicApp() {
             } catch (failure: Exception) {
                 cloudChoices = emptyMap()
                 cloudConflicts = emptyList()
-                notifyUser("Sincronizzazione cloud non riuscita: " +
-                    (failure.localizedMessage ?: "riprova"))
+                cloudSyncError = "Sincronizzazione non riuscita · riprova"
+                notifyUser("Drive: " + (failure.localizedMessage ?: "sincronizzazione non riuscita"))
             } finally {
+                // A partial upload can have advanced the durable journal.
+                // Always refresh its status without assuming sync succeeded.
+                cloudState = runCatching {
+                    withContext(Dispatchers.IO) { cloudJournal.load() }
+                }.getOrDefault(cloudState)
                 busy = ""
             }
         }
@@ -342,14 +358,18 @@ private fun OpenMusicApp() {
 
     val requestDriveAccess = rememberDriveAccess(
         onAuthorized = { token -> runCloudSync(token) },
-        onError = { error -> notifyUser(error) },
+        onError = { error ->
+            cloudSyncError = "Drive non disponibile · riprova"
+            notifyUser(error)
+        },
     )
     val revokeDriveAccess = rememberDriveRevocation(
         onRevoked = {
             scope.launch {
                 try {
                     withContext(Dispatchers.IO) { cloudCoordinator.disconnect() }
-                    cloudLinked = false
+                    cloudState = withContext(Dispatchers.IO) { cloudJournal.load() }
+                    cloudSyncError = null
                     cloudChoices = emptyMap()
                     cloudConflicts = emptyList()
                     notifyUser("Account Google Drive scollegato · playlist locali intatte")
@@ -427,7 +447,8 @@ private fun OpenMusicApp() {
                         })) {
                         refreshMatches(playlists, localCopies)
                         selectedId = listId
-                        notifyUser("Aggiunto a " + list.name)
+                        notifyUser("Aggiunto a " + list.name +
+                            if (cloudLinked) " · sincronizza Drive" else "")
                     }
                 } catch (cancel: CancellationException) {
                     throw cancel
@@ -567,7 +588,7 @@ private fun OpenMusicApp() {
                         it.write(PortableJson.encode(chosen).toByteArray(Charsets.UTF_8))
                     } ?: throw IllegalStateException("Non è possibile scrivere il documento")
                 }
-                notifyUser("Playlist esportata: contiene solo metadati")
+                notifyUser("Playlist esportata")
             } catch (failure: Exception) {
                 notifyUser("Esportazione non riuscita: " + (failure.localizedMessage ?: "errore"))
             } finally {
@@ -785,6 +806,7 @@ private fun OpenMusicApp() {
             onCancel = {
                 cloudConflicts = emptyList()
                 cloudChoices = emptyMap()
+                cloudSyncError = "Conflitto non risolto · sincronizza per riprovare"
             },
         )
     }
@@ -821,6 +843,19 @@ private fun OpenMusicApp() {
     }
     val filtered = remember(visibleAudio, search) {
         visibleAudio.filter { AudioSearch.matches(it.title, it.artist, search) }
+    }
+    val localSyncStatus = remember(playlists, cloudState) {
+        CloudLocalSyncInspector.inspect(playlists, cloudState.checkpoints)
+    }
+    val driveStatus = when {
+        !localLoaded -> "Caricamento playlist"
+        cloudConflicts.isNotEmpty() -> "Conflitto: scegli una versione"
+        cloudSyncError != null -> cloudSyncError!!
+        !cloudLinked -> "Playlist solo sul telefono"
+        localSyncStatus.missingCount > 0 -> "Playlist locali mancanti · verifica Drive"
+        localSyncStatus.pendingCount > 0 -> localSyncStatus.pendingCount.toString() +
+            " playlist da sincronizzare"
+        else -> "Nessuna modifica da salvare"
     }
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -985,28 +1020,57 @@ private fun OpenMusicApp() {
                             }
                         }
                         item {
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                            ) {
-                                TextButton(
-                                    onClick = { requestDriveAccess() },
-                                    enabled = busy.isEmpty() && localLoaded,
-                                    modifier = Modifier.heightIn(min = 48.dp),
+                            Column {
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Icon(androidx.compose.material.icons.Icons.Rounded.Cloud,
-                                        contentDescription = null, modifier = Modifier.size(20.dp))
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(if (cloudLinked) "Sincronizza Drive" else "Collega Google Drive")
-                                }
-                                if (cloudLinked) {
+                                    Text("Google Drive",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        modifier = Modifier.weight(1f))
                                     TextButton(
-                                        onClick = { showCloudDisconnect = true },
-                                        enabled = busy.isEmpty(),
+                                        onClick = { requestDriveAccess() },
+                                        enabled = busy.isEmpty() && localLoaded,
                                         modifier = Modifier.heightIn(min = 48.dp),
-                                    ) { Text("Scollega") }
+                                    ) {
+                                        Icon(androidx.compose.material.icons.Icons.Rounded.Cloud,
+                                            contentDescription = null, modifier = Modifier.size(20.dp))
+                                        Spacer(Modifier.width(5.dp))
+                                        Text(if (cloudLinked) "Sincronizza" else "Collega")
+                                    }
+                                    if (cloudLinked) {
+                                        Box {
+                                            IconButton(
+                                                onClick = { showCloudMenu = true },
+                                                enabled = busy.isEmpty(),
+                                            ) {
+                                                Icon(androidx.compose.material.icons.Icons.Rounded.MoreVert,
+                                                    contentDescription = "Opzioni Google Drive")
+                                            }
+                                            DropdownMenu(
+                                                expanded = showCloudMenu,
+                                                onDismissRequest = { showCloudMenu = false },
+                                            ) {
+                                                DropdownMenuItem(
+                                                    text = { Text("Scollega Drive") },
+                                                    onClick = {
+                                                        showCloudMenu = false
+                                                        showCloudDisconnect = true
+                                                    },
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
+                                Text(
+                                    driveStatus,
+                                    color = if (cloudSyncError != null ||
+                                        localSyncStatus.missingCount > 0)
+                                        MusicPalette.warning else MusicPalette.muted,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
                             }
                         }
                         // A single playlist needs no selector: the detail is already visible.
