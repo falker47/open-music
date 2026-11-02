@@ -61,7 +61,7 @@ jobs:
         run: |
           set -euo pipefail
           export OPEN_MUSIC_QA_KEYSTORE_PATH="$RUNNER_TEMP/disposable-ci-qa.p12"
-          export OPEN_MUSIC_QA_KEY_PASSWORD="CI-only-do-not-reuse-2026"
+          export OPEN_MUSIC_QA_KEY_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
           keytool -genkeypair -noprompt -storetype PKCS12 \
             -keystore "$OPEN_MUSIC_QA_KEYSTORE_PATH" \
             -storepass "$OPEN_MUSIC_QA_KEY_PASSWORD" \
