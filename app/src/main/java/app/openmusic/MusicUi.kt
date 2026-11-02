@@ -28,6 +28,7 @@ import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlaylistPlay
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material.icons.rounded.Search
@@ -66,16 +67,17 @@ import kotlin.math.max
  * is owned by these components; commands are delegated to MainActivity's existing handlers.
  */
 internal object MusicPalette {
-    val background = Color(0xFF100E0D)
-    val surface = Color(0xFF201A17)
-    val elevated = Color(0xFF30241D)
-    val border = Color(0xFF4A3429)
-    val primary = Color(0xFFFFA552)
-    val primaryDark = Color(0xFF301703)
-    val text = Color(0xFFFFF6F0)
-    val muted = Color(0xFFC7B8AE)
-    val subtle = Color(0xFF9B8072)
-    val warning = Color(0xFFFFC18A)
+    // Neutral charcoal lets album artwork lead; amber keeps the established accent.
+    val background = Color(0xFF121212)
+    val surface = Color(0xFF1E1D1C)
+    val elevated = Color(0xFF2A2623)
+    val border = Color(0xFF403832)
+    val primary = Color(0xFFFFAE6B)
+    val primaryDark = Color(0xFF2D190C)
+    val text = Color(0xFFF8F5F1)
+    val muted = Color(0xFFC1B8B0)
+    val subtle = Color(0xFF9C8E84)
+    val warning = Color(0xFFFFC68C)
 }
 
 @Composable
@@ -180,9 +182,9 @@ internal fun MusicArt(
         value = source?.let { cache.load(context, it, quality) }
     }
     Box(
-        modifier = modifier.clip(RoundedCornerShape(17.dp))
-            .background(Brush.linearGradient(listOf(Color(0xFF62402B), Color(0xFF35251E), Color(0xFF241A17))))
-            .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(17.dp)),
+        modifier = modifier.clip(RoundedCornerShape(13.dp))
+            .background(Brush.linearGradient(listOf(Color(0xFF45362C), Color(0xFF29231F))))
+            .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(13.dp)),
         contentAlignment = Alignment.Center,
     ) {
         if (picture != null) {
@@ -200,44 +202,41 @@ internal fun MusicArt(
 }
 
 @Composable
-internal fun MusicHeader(count: Int, isLibrary: Boolean) {
+internal fun MusicHeader(
+    count: Int, total: Int, enabled: Boolean, onScan: () -> Unit,
+) {
     Row(
-        Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 20.dp),
+        Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            Modifier.size(46.dp).clip(RoundedCornerShape(16.dp))
-                .background(Brush.linearGradient(listOf(MusicPalette.primary, Color(0xFFEA7930)))),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(Icons.Rounded.MusicNote, contentDescription = null,
-                modifier = Modifier.size(29.dp), tint = MusicPalette.primaryDark)
-        }
-        Spacer(Modifier.width(13.dp))
         Column(Modifier.weight(1f)) {
             Text("OPEN MUSIC", color = MusicPalette.primary,
-                style = MaterialTheme.typography.labelSmall, letterSpacing = 2.1.sp)
-            Text(if (isLibrary) "La tua libreria" else "Le tue playlist",
-                style = MaterialTheme.typography.headlineSmall, maxLines = 1,
-                overflow = TextOverflow.Ellipsis)
+                style = MaterialTheme.typography.labelSmall, letterSpacing = 1.7.sp)
+            Spacer(Modifier.height(2.dp))
+            Text("La tua musica", style = MaterialTheme.typography.headlineSmall,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("$count di $total file audio", style = MaterialTheme.typography.bodySmall,
+                color = MusicPalette.muted)
         }
-        Surface(
-            color = MusicPalette.surface, shape = RoundedCornerShape(50),
-            border = BorderStroke(1.dp, MusicPalette.border),
+        TextButton(
+            onClick = onScan,
+            enabled = enabled,
+            modifier = Modifier.heightIn(min = 48.dp),
+            contentPadding = PaddingValues(horizontal = 8.dp),
         ) {
-            Text(
-                count.toString(), modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
-                color = MusicPalette.muted, style = MaterialTheme.typography.labelMedium,
-            )
+            Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(19.dp))
+            Spacer(Modifier.width(5.dp))
+            Text("Scansiona")
         }
     }
 }
 
 @Composable
 internal fun MusicBottomNavigation(tab: Int, onTab: (Int) -> Unit) {
-    Surface(color = MusicPalette.background) {
+    Column(Modifier.fillMaxWidth().background(MusicPalette.background)) {
+        HorizontalDivider(color = MusicPalette.border.copy(alpha = 0.55f), thickness = 1.dp)
         Row(
-            Modifier.fillMaxWidth().height(68.dp).padding(horizontal = 28.dp),
+            Modifier.fillMaxWidth().height(62.dp).padding(horizontal = 28.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             NavigationDestination(
@@ -260,7 +259,7 @@ private fun NavigationDestination(
     onClick: () -> Unit,
 ) {
     Column(
-        modifier.fillMaxHeight().clip(RoundedCornerShape(18.dp)).clickable(onClick = onClick),
+        modifier.fillMaxHeight().clip(RoundedCornerShape(14.dp)).clickable(onClick = onClick),
         verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Surface(
@@ -269,7 +268,7 @@ private fun NavigationDestination(
         ) {
             Icon(
                 icon, contentDescription = null,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 5.dp).size(23.dp),
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp).size(22.dp),
                 tint = if (selected) MusicPalette.primary else MusicPalette.subtle,
             )
         }
@@ -300,61 +299,33 @@ internal fun MusicBusyIndicator(message: String, onCancel: (() -> Unit)? = null)
 }
 
 @Composable
-internal fun MusicSectionHeader(
-    title: String, subtitle: String? = null, actionLabel: String? = null,
-    actionIcon: ImageVector? = null, onAction: (() -> Unit)? = null,
-) {
-    Row(
-        Modifier.fillMaxWidth().padding(bottom = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleLarge)
-            if (subtitle != null) {
-                Text(subtitle, style = MaterialTheme.typography.bodySmall,
-                    color = MusicPalette.muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            }
-        }
-        if (actionLabel != null && onAction != null) {
-            TextButton(onClick = onAction) {
-                if (actionIcon != null) {
-                    Icon(actionIcon, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(5.dp))
-                }
-                Text(actionLabel)
-            }
-        }
-    }
-}
-
-@Composable
 internal fun MusicEmptyState(
     title: String, description: String, icon: ImageVector,
     buttonLabel: String? = null, onAction: (() -> Unit)? = null,
 ) {
     Surface(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp),
-        color = MusicPalette.surface, shape = RoundedCornerShape(24.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+        color = MusicPalette.surface, shape = RoundedCornerShape(18.dp),
         border = BorderStroke(1.dp, MusicPalette.border),
     ) {
         Column(
-            Modifier.fillMaxWidth().padding(horizontal = 26.dp, vertical = 32.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Box(
-                Modifier.size(76.dp).clip(RoundedCornerShape(23.dp)).background(MusicPalette.elevated),
+                Modifier.size(58.dp).clip(RoundedCornerShape(17.dp)).background(MusicPalette.elevated),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(icon, contentDescription = null, tint = MusicPalette.primary,
-                    modifier = Modifier.size(36.dp))
+                    modifier = Modifier.size(28.dp))
             }
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(12.dp))
             Text(title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
-            Spacer(Modifier.height(7.dp))
+            Spacer(Modifier.height(6.dp))
             Text(description, color = MusicPalette.muted, textAlign = TextAlign.Center,
                 style = MaterialTheme.typography.bodyMedium)
             if (buttonLabel != null && onAction != null) {
-                Spacer(Modifier.height(18.dp))
+                Spacer(Modifier.height(14.dp))
                 Button(onClick = onAction) { Text(buttonLabel) }
             }
         }
@@ -368,7 +339,7 @@ internal fun MusicTrackRow(
     inMusic: Boolean, onToggleMusic: () -> Unit,
 ) {
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 76.dp),
+        Modifier.fillMaxWidth().heightIn(min = 70.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(
@@ -376,8 +347,8 @@ internal fun MusicTrackRow(
                 .padding(vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            MusicArt(file.uri, cache, Modifier.size(56.dp), quality = 192)
-            Spacer(Modifier.width(13.dp))
+            MusicArt(file.uri, cache, Modifier.size(50.dp), quality = 192)
+            Spacer(Modifier.width(11.dp))
             Column(Modifier.weight(1f)) {
                 Text(file.title, color = MusicPalette.text,
                     style = MaterialTheme.typography.titleMedium,
@@ -407,9 +378,15 @@ internal fun MusicTrackRow(
                 modifier = Modifier.size(23.dp),
             )
         }
-        IconButton(onClick = onAdd, modifier = Modifier.size(48.dp)) {
-            Icon(Icons.Rounded.Add, contentDescription = "Aggiungi " + file.title + " a una playlist",
-                tint = MusicPalette.primary, modifier = Modifier.size(25.dp))
+        FilledTonalIconButton(
+            onClick = onAdd, modifier = Modifier.size(48.dp),
+            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                containerColor = MusicPalette.elevated, contentColor = MusicPalette.primary,
+            ),
+        ) {
+            Icon(Icons.Rounded.Add,
+                contentDescription = "Aggiungi " + file.title + " a una playlist",
+                modifier = Modifier.size(24.dp))
         }
     }
 }
@@ -424,37 +401,39 @@ internal fun MusicPlaylistSummary(
     var showMissing by remember(name) { mutableStateOf(false) }
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp), color = MusicPalette.surface,
-        border = BorderStroke(1.dp, MusicPalette.border),
+        shape = RoundedCornerShape(18.dp), color = MusicPalette.surface,
+        border = BorderStroke(1.dp, MusicPalette.border.copy(alpha = 0.70f)),
     ) {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(name, style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    val detail = when {
-                        analyzing -> trackCount.toString() + " brani · " + available +
-                            " confermati · analisi"
-                        needsVerification -> trackCount.toString() + " brani · da verificare"
-                        else -> trackCount.toString() + " brani · " + available + " disponibili"
-                    }
-                    Text(detail, color = MusicPalette.muted,
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+            Text(name, style = MaterialTheme.typography.titleLarge,
+                maxLines = 2, overflow = TextOverflow.Ellipsis)
+            val detail = when {
+                analyzing -> "$trackCount brani · $available confermati · analisi"
+                needsVerification -> "$trackCount brani · da verificare"
+                else -> "$trackCount brani · $available disponibili"
+            }
+            Text(detail, color = MusicPalette.muted,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 TextButton(onClick = onRelink, enabled = !busy,
                     modifier = Modifier.heightIn(min = 48.dp),
-                    contentPadding = PaddingValues(horizontal = 4.dp)) {
+                    contentPadding = PaddingValues(horizontal = 7.dp)) {
                     Icon(Icons.Rounded.Link, contentDescription = null,
-                        tint = MusicPalette.primary, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(3.dp))
+                        modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
                     Text("Trova file", maxLines = 1)
                 }
+                Spacer(Modifier.width(8.dp))
                 TextButton(onClick = onExport, enabled = !busy,
                     modifier = Modifier.heightIn(min = 48.dp),
-                    contentPadding = PaddingValues(horizontal = 6.dp)) {
+                    contentPadding = PaddingValues(horizontal = 7.dp)) {
                     Icon(Icons.Rounded.FileUpload, contentDescription = null,
-                        tint = MusicPalette.primary, modifier = Modifier.size(20.dp))
+                        modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("Esporta", maxLines = 1)
                 }
@@ -495,7 +474,7 @@ internal fun MusicPlaylistTrackRow(
 ) {
     val accessible = playable != null
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 76.dp),
+        Modifier.fillMaxWidth().heightIn(min = 70.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(
@@ -503,8 +482,8 @@ internal fun MusicPlaylistTrackRow(
                 .clickable(enabled = accessible, onClick = onPlay).padding(vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            MusicArt(playable?.uri, cache, Modifier.size(52.dp), quality = 192)
-            Spacer(Modifier.width(12.dp))
+            MusicArt(playable?.uri, cache, Modifier.size(50.dp), quality = 192)
+            Spacer(Modifier.width(11.dp))
             Column(Modifier.weight(1f)) {
                 Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.titleMedium,
@@ -523,18 +502,18 @@ internal fun MusicPlaylistTrackRow(
                             style = MaterialTheme.typography.bodySmall)
                     }
                 }
-                Text(
-                    when (PlaylistVerification.display(status, analyzing, verificationComplete)) {
-                        VerificationDisplay.ANALYZING -> "Analisi in corso"
-                        VerificationDisplay.AVAILABLE -> "Disponibile"
-                        VerificationDisplay.REVIEW -> "Da verificare"
-                        VerificationDisplay.AMBIGUOUS -> "Ambiguo"
-                        VerificationDisplay.MISSING -> "Mancante"
-                    },
-                    color = if (status == MatchStatus.EXACT)
-                        MusicPalette.primary else MusicPalette.warning,
-                    style = MaterialTheme.typography.labelSmall,
-                )
+                // Keep exceptional match states visible without repeating "Disponibile".
+                when (PlaylistVerification.display(status, analyzing, verificationComplete)) {
+                    VerificationDisplay.AVAILABLE -> Unit
+                    VerificationDisplay.ANALYZING -> Text("Analisi in corso",
+                        color = MusicPalette.muted, style = MaterialTheme.typography.labelSmall)
+                    VerificationDisplay.REVIEW -> Text("Da verificare",
+                        color = MusicPalette.warning, style = MaterialTheme.typography.labelSmall)
+                    VerificationDisplay.AMBIGUOUS -> Text("Ambiguo",
+                        color = MusicPalette.warning, style = MaterialTheme.typography.labelSmall)
+                    VerificationDisplay.MISSING -> Text("Mancante",
+                        color = MusicPalette.warning, style = MaterialTheme.typography.labelSmall)
+                }
             }
         }
         IconButton(onClick = onRemove, modifier = Modifier.size(48.dp)) {
@@ -578,8 +557,8 @@ internal fun MusicMiniPlayer(
     onPlayPause: () -> Unit, onNext: () -> Unit,
 ) {
     Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
-        shape = RoundedCornerShape(22.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(17.dp),
         color = MusicPalette.elevated, tonalElevation = 4.dp,
         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.09f)),
     ) {
@@ -593,7 +572,7 @@ internal fun MusicMiniPlayer(
                         .padding(vertical = 7.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    MusicArt(uri, cache, Modifier.size(48.dp), quality = 192)
+                    MusicArt(uri, cache, Modifier.size(46.dp), quality = 192)
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
                         Text(title, style = MaterialTheme.typography.titleMedium,
@@ -632,12 +611,12 @@ internal fun MusicNowPlaying(
     BoxWithConstraints(
         modifier.background(
             Brush.verticalGradient(
-                listOf(Color(0xFF382417), MusicPalette.background, MusicPalette.background),
+                listOf(Color(0xFF29231F), MusicPalette.background, MusicPalette.background),
             ),
         ),
     ) {
-        val artSize: Dp = (maxWidth - 48.dp).coerceAtMost(maxHeight * 0.49f)
-            .coerceAtMost(410.dp).coerceAtLeast(180.dp)
+        val artSize: Dp = (maxWidth - 48.dp).coerceAtMost(maxHeight * 0.42f)
+            .coerceAtMost(360.dp).coerceAtLeast(180.dp)
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 12.dp),
@@ -655,13 +634,13 @@ internal fun MusicNowPlaying(
                 Spacer(Modifier.weight(1f))
                 Spacer(Modifier.size(48.dp))
             }
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(16.dp))
             MusicArt(
                 source = uri, cache = cache,
                 modifier = Modifier.size(artSize).shadow(22.dp, RoundedCornerShape(24.dp)),
                 quality = 720,
             )
-            Spacer(Modifier.height(28.dp))
+            Spacer(Modifier.height(22.dp))
             Column(Modifier.fillMaxWidth()) {
                 Text(title, style = MaterialTheme.typography.headlineMedium,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -670,7 +649,7 @@ internal fun MusicNowPlaying(
                     color = MusicPalette.muted, style = MaterialTheme.typography.bodyLarge,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            Spacer(Modifier.height(22.dp))
+            Spacer(Modifier.height(16.dp))
             MusicPlaybackSeek(title + "|" + uri, positionMs, durationMs, onSeek)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(formatMusicTime(positionMs), color = MusicPalette.muted,
@@ -678,7 +657,7 @@ internal fun MusicNowPlaying(
                 Text(if (durationMs > 0L) formatMusicTime(durationMs) else "--:--",
                     color = MusicPalette.muted, style = MaterialTheme.typography.labelMedium)
             }
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(16.dp))
             Row(
                 Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
@@ -689,7 +668,7 @@ internal fun MusicNowPlaying(
                 }
                 FilledIconButton(
                     onClick = onPlayPause,
-                    modifier = Modifier.size(78.dp),
+                    modifier = Modifier.size(74.dp),
                     shape = CircleShape,
                     colors = IconButtonDefaults.filledIconButtonColors(
                         containerColor = MusicPalette.primary, contentColor = MusicPalette.primaryDark,
@@ -697,7 +676,7 @@ internal fun MusicNowPlaying(
                 ) {
                     Icon(if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                         contentDescription = if (playing) "Pausa" else "Riproduci",
-                        modifier = Modifier.size(43.dp))
+                        modifier = Modifier.size(41.dp))
                 }
                 IconButton(onClick = onNext, modifier = Modifier.size(62.dp)) {
                     Icon(Icons.Rounded.SkipNext, contentDescription = "Brano successivo",

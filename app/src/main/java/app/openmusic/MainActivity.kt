@@ -904,19 +904,16 @@ private fun OpenMusicApp() {
             Column(
                 Modifier.fillMaxSize().padding(insets).padding(horizontal = 18.dp),
             ) {
-                if (tab == 0) MusicHeader(visibleAudio.size, isLibrary = true)
+                if (tab == 0) MusicHeader(
+                    count = visibleAudio.size,
+                    total = audioFiles.size,
+                    enabled = busy.isEmpty(),
+                    onScan = { requestScan() },
+                )
                 if (busy.isNotEmpty()) MusicBusyIndicator(
                     busy, onCancel = if (verifying) ({ analysisJob?.cancel() }) else null,
                 )
                 if (tab == 0) {
-                    MusicSectionHeader(
-                        title = "Brani locali",
-                        subtitle = visibleAudio.size.toString() + " visibili su " +
-                            audioFiles.size + " file audio",
-                        actionLabel = "Aggiorna",
-                        actionIcon = androidx.compose.material.icons.Icons.Rounded.Refresh,
-                        onAction = { if (busy.isEmpty()) requestScan() },
-                    )
                     Row(
                         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -948,7 +945,7 @@ private fun OpenMusicApp() {
                                 }
                             }
                         },
-                        shape = RoundedCornerShape(14.dp), singleLine = true,
+                        shape = RoundedCornerShape(15.dp), singleLine = true,
                     )
                     Spacer(Modifier.height(12.dp))
                     if (filtered.isEmpty()) {
@@ -1020,57 +1017,83 @@ private fun OpenMusicApp() {
                             }
                         }
                         item {
-                            Column {
-                                Row(
-                                    Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Text("Google Drive",
-                                        style = MaterialTheme.typography.titleSmall,
-                                        modifier = Modifier.weight(1f))
-                                    TextButton(
-                                        onClick = { requestDriveAccess() },
-                                        enabled = busy.isEmpty() && localLoaded,
-                                        modifier = Modifier.heightIn(min = 48.dp),
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(16.dp),
+                                color = MusicPalette.surface,
+                                border = androidx.compose.foundation.BorderStroke(
+                                    1.dp, MusicPalette.border.copy(alpha = 0.65f),
+                                ),
+                            ) {
+                                Column(Modifier.padding(
+                                    start = 14.dp, end = 8.dp, top = 4.dp, bottom = 12.dp,
+                                )) {
+                                    Row(
+                                        Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
                                     ) {
-                                        Icon(androidx.compose.material.icons.Icons.Rounded.Cloud,
-                                            contentDescription = null, modifier = Modifier.size(20.dp))
-                                        Spacer(Modifier.width(5.dp))
-                                        Text(if (cloudLinked) "Sincronizza" else "Collega")
-                                    }
-                                    if (cloudLinked) {
-                                        Box {
-                                            IconButton(
-                                                onClick = { showCloudMenu = true },
-                                                enabled = busy.isEmpty(),
-                                            ) {
-                                                Icon(androidx.compose.material.icons.Icons.Rounded.MoreVert,
-                                                    contentDescription = "Opzioni Google Drive")
-                                            }
-                                            DropdownMenu(
-                                                expanded = showCloudMenu,
-                                                onDismissRequest = { showCloudMenu = false },
-                                            ) {
-                                                DropdownMenuItem(
-                                                    text = { Text("Scollega Drive") },
-                                                    onClick = {
-                                                        showCloudMenu = false
-                                                        showCloudDisconnect = true
-                                                    },
-                                                )
+                                        Icon(
+                                            androidx.compose.material.icons.Icons.Rounded.Cloud,
+                                            contentDescription = null,
+                                            tint = MusicPalette.primary,
+                                            modifier = Modifier.size(20.dp),
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(
+                                            "Google Drive",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            modifier = Modifier.weight(1f),
+                                            maxLines = 1,
+                                        )
+                                        FilledTonalButton(
+                                            onClick = { requestDriveAccess() },
+                                            enabled = busy.isEmpty() && localLoaded,
+                                            modifier = Modifier.heightIn(min = 48.dp),
+                                            contentPadding = PaddingValues(horizontal = 12.dp),
+                                            colors = ButtonDefaults.filledTonalButtonColors(
+                                                containerColor = MusicPalette.elevated,
+                                                contentColor = MusicPalette.primary,
+                                            ),
+                                        ) {
+                                            Text(if (cloudLinked) "Sincronizza" else "Collega")
+                                        }
+                                        if (cloudLinked) {
+                                            Box {
+                                                IconButton(
+                                                    onClick = { showCloudMenu = true },
+                                                    enabled = busy.isEmpty(),
+                                                ) {
+                                                    Icon(
+                                                        androidx.compose.material.icons.Icons.Rounded.MoreVert,
+                                                        contentDescription = "Opzioni Google Drive",
+                                                    )
+                                                }
+                                                DropdownMenu(
+                                                    expanded = showCloudMenu,
+                                                    onDismissRequest = { showCloudMenu = false },
+                                                ) {
+                                                    DropdownMenuItem(
+                                                        text = { Text("Scollega Drive") },
+                                                        onClick = {
+                                                            showCloudMenu = false
+                                                            showCloudDisconnect = true
+                                                        },
+                                                    )
+                                                }
                                             }
                                         }
                                     }
+                                    Text(
+                                        driveStatus,
+                                        modifier = Modifier.padding(start = 28.dp),
+                                        color = if (cloudSyncError != null ||
+                                            localSyncStatus.missingCount > 0)
+                                            MusicPalette.warning else MusicPalette.muted,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
                                 }
-                                Text(
-                                    driveStatus,
-                                    color = if (cloudSyncError != null ||
-                                        localSyncStatus.missingCount > 0)
-                                        MusicPalette.warning else MusicPalette.muted,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
                             }
                         }
                         // A single playlist needs no selector: the detail is already visible.
@@ -1095,7 +1118,7 @@ private fun OpenMusicApp() {
                             item {
                                 MusicEmptyState(
                                     title = "La tua prima playlist",
-                                    description = "Crea una raccolta oppure importa un file JSON v1. I brani restano sul tuo dispositivo.",
+                                    description = "Crea una playlist o importa un file JSON.",
                                     icon = androidx.compose.material.icons.Icons.Rounded.PlaylistPlay,
                                     buttonLabel = "Crea playlist",
                                     onAction = { createDialog = true },
