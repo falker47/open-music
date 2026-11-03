@@ -22,7 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ArrowForward
-import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.FileDownload
@@ -377,7 +377,7 @@ internal fun MusicLibraryCategoryTabs(
             val selected = onlyMusic == isMusic
             Surface(
                 onClick = { onSelect(isMusic) },
-                modifier = Modifier.weight(1f).height(48.dp),
+                modifier = Modifier.weight(1f).height(44.dp),
                 shape = RoundedCornerShape(11.dp),
                 color = if (selected) MusicPalette.elevated else Color.Transparent,
             ) {
@@ -387,7 +387,7 @@ internal fun MusicLibraryCategoryTabs(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
-                        if (isMusic) Icons.Rounded.MusicNote else Icons.Rounded.Headphones,
+                        if (isMusic) Icons.Rounded.MusicNote else Icons.Rounded.GraphicEq,
                         contentDescription = null,
                         tint = if (selected) MusicPalette.primary else MusicPalette.muted,
                         modifier = Modifier.size(19.dp),
@@ -442,40 +442,47 @@ internal fun MusicTrackRow(
                 }
             }
         }
-        // Destination icon + direction convey the move between the two tabs.
-        IconButton(
-            onClick = onToggleMusic,
-            modifier = Modifier.size(48.dp).semantics {
-                contentDescription = if (inMusic)
-                    "Sposta " + file.title + " in Altri audio"
-                else "Sposta " + file.title + " in Musica"
-            },
+        // Equal, compact action slots reserve more width for track titles.
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (inMusic) {
-                    Icon(Icons.Rounded.ArrowForward, contentDescription = null,
-                        tint = MusicPalette.muted, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(2.dp))
-                    Icon(Icons.Rounded.Headphones, contentDescription = null,
-                        tint = MusicPalette.muted, modifier = Modifier.size(19.dp))
-                } else {
-                    Icon(Icons.Rounded.MusicNote, contentDescription = null,
-                        tint = MusicPalette.primary, modifier = Modifier.size(19.dp))
-                    Spacer(Modifier.width(2.dp))
-                    Icon(Icons.Rounded.ArrowBack, contentDescription = null,
-                        tint = MusicPalette.primary, modifier = Modifier.size(16.dp))
+            IconButton(
+                onClick = onToggleMusic,
+                modifier = Modifier.size(40.dp).semantics {
+                    contentDescription = if (inMusic)
+                        "Sposta " + file.title + " in Altri audio"
+                    else "Sposta " + file.title + " in Musica"
+                },
+            ) {
+                // The arrow almost touches the destination icon.
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy((-2).dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (inMusic) {
+                        Icon(Icons.Rounded.ArrowForward, contentDescription = null,
+                            tint = MusicPalette.muted, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Rounded.GraphicEq, contentDescription = null,
+                            tint = MusicPalette.muted, modifier = Modifier.size(19.dp))
+                    } else {
+                        Icon(Icons.Rounded.MusicNote, contentDescription = null,
+                            tint = MusicPalette.primary, modifier = Modifier.size(19.dp))
+                        Icon(Icons.Rounded.ArrowBack, contentDescription = null,
+                            tint = MusicPalette.primary, modifier = Modifier.size(16.dp))
+                    }
                 }
             }
-        }
-        IconButton(onClick = onQueue, modifier = Modifier.size(44.dp)) {
-            Icon(Icons.Rounded.QueueMusic,
-                contentDescription = "Aggiungi " + file.title + " alla coda",
-                tint = MusicPalette.muted, modifier = Modifier.size(21.dp))
-        }
-        IconButton(onClick = onAdd, modifier = Modifier.size(48.dp)) {
-            Icon(Icons.Rounded.Add,
-                contentDescription = "Aggiungi " + file.title + " a una playlist",
-                tint = MusicPalette.primary, modifier = Modifier.size(27.dp))
+            IconButton(onClick = onQueue, modifier = Modifier.size(40.dp)) {
+                Icon(Icons.Rounded.QueueMusic,
+                    contentDescription = "Aggiungi " + file.title + " alla coda",
+                    tint = MusicPalette.muted, modifier = Modifier.size(21.dp))
+            }
+            IconButton(onClick = onAdd, modifier = Modifier.size(40.dp)) {
+                Icon(Icons.Rounded.Add,
+                    contentDescription = "Aggiungi " + file.title + " a una playlist",
+                    tint = MusicPalette.primary, modifier = Modifier.size(25.dp))
+            }
         }
     }
 }
@@ -748,8 +755,16 @@ internal fun MusicNowPlaying(
 ) {
     BoxWithConstraints(modifier.background(MusicPalette.background)) {
         val controlWidth: Dp = (maxWidth - 36.dp).coerceAtMost(340.dp)
-        val artSize: Dp = (maxWidth - 44.dp).coerceAtMost(maxHeight * 0.34f)
-            .coerceAtMost(340.dp).coerceAtLeast(152.dp)
+        // Keep the art and its aligned metadata/seek track within the content width.
+        val artSize: Dp = (maxWidth - 36.dp).coerceAtMost(maxHeight * 0.36f)
+            .coerceAtMost(356.dp).coerceAtLeast(152.dp)
+        val skipButtonSize = 56.dp
+        val playButtonSize = 74.dp
+        // Midpoint between each 48dp outer control and the centered Queue button;
+        // on smaller screens leave clearance around the larger Play button.
+        val skipCenter = ((24.dp + controlWidth / 2) / 2)
+            .coerceAtMost(controlWidth / 2 - (skipButtonSize + playButtonSize) / 2 - 6.dp)
+            .coerceAtLeast(skipButtonSize / 2)
         Column(
             Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 6.dp),
         ) {
@@ -815,7 +830,7 @@ internal fun MusicNowPlaying(
                     // Top tier: Repeat / Queue / Shuffle. Lower tier: previous /
                     // Play / next. The outer controls rise to frame a shallow arc.
                     Box(
-                        Modifier.width(controlWidth).height(116.dp),
+                        Modifier.width(controlWidth).height(142.dp),
                     ) {
                         IconButton(
                             onClick = onToggleRepeatOne,
@@ -853,32 +868,37 @@ internal fun MusicNowPlaying(
                                     else MusicPalette.muted,
                                 modifier = Modifier.size(24.dp))
                         }
-                        Row(
-                            Modifier.align(Alignment.BottomCenter),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
+                        IconButton(
+                            onClick = onPrevious,
+                            modifier = Modifier.align(Alignment.BottomStart)
+                                .offset(x = skipCenter - skipButtonSize / 2)
+                                .size(skipButtonSize),
                         ) {
-                            IconButton(onClick = onPrevious, modifier = Modifier.size(52.dp)) {
-                                Icon(Icons.Rounded.SkipPrevious,
-                                    contentDescription = "Brano precedente",
-                                    tint = MusicPalette.text, modifier = Modifier.size(31.dp))
-                            }
-                            FilledIconButton(
-                                onClick = onPlayPause, modifier = Modifier.size(68.dp),
-                                shape = CircleShape,
-                                colors = IconButtonDefaults.filledIconButtonColors(
-                                    containerColor = MusicPalette.primary,
-                                    contentColor = MusicPalette.primaryDark),
-                            ) {
-                                Icon(if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                                    contentDescription = if (playing) "Pausa" else "Riproduci",
-                                    modifier = Modifier.size(38.dp))
-                            }
-                            IconButton(onClick = onNext, modifier = Modifier.size(52.dp)) {
-                                Icon(Icons.Rounded.SkipNext,
-                                    contentDescription = "Brano successivo",
-                                    tint = MusicPalette.text, modifier = Modifier.size(31.dp))
-                            }
+                            Icon(Icons.Rounded.SkipPrevious,
+                                contentDescription = "Brano precedente",
+                                tint = MusicPalette.text, modifier = Modifier.size(33.dp))
+                        }
+                        FilledIconButton(
+                            onClick = onPlayPause,
+                            modifier = Modifier.align(Alignment.BottomCenter).size(playButtonSize),
+                            shape = CircleShape,
+                            colors = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = MusicPalette.primary,
+                                contentColor = MusicPalette.primaryDark),
+                        ) {
+                            Icon(if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                                contentDescription = if (playing) "Pausa" else "Riproduci",
+                                modifier = Modifier.size(41.dp))
+                        }
+                        IconButton(
+                            onClick = onNext,
+                            modifier = Modifier.align(Alignment.BottomStart)
+                                .offset(x = controlWidth - skipCenter - skipButtonSize / 2)
+                                .size(skipButtonSize),
+                        ) {
+                            Icon(Icons.Rounded.SkipNext,
+                                contentDescription = "Brano successivo",
+                                tint = MusicPalette.text, modifier = Modifier.size(33.dp))
                         }
                     }
                 }

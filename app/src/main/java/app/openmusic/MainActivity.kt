@@ -1229,6 +1229,7 @@ private fun OpenMusicApp() {
                         otherCount = audioFiles.size - musicCount,
                         onSelect = { onlyMusic = it },
                     )
+                    Spacer(Modifier.height(10.dp))
                     OutlinedTextField(
                         value = search, onValueChange = { search = it },
                         modifier = Modifier.fillMaxWidth().height(48.dp),
@@ -1339,77 +1340,82 @@ private fun OpenMusicApp() {
                                     1.dp, MusicPalette.border.copy(alpha = 0.65f),
                                 ),
                             ) {
-                                Column(Modifier.padding(
-                                    start = 12.dp, end = 6.dp, top = 2.dp, bottom = 8.dp,
-                                )) {
-                                    Row(
-                                        Modifier.fillMaxWidth(),
-                                        verticalAlignment = Alignment.CenterVertically,
+                                Row(
+                                    Modifier.fillMaxWidth().padding(
+                                        start = 12.dp, end = 12.dp, top = 8.dp, bottom = 8.dp,
+                                    ),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                androidx.compose.material.icons.Icons.Rounded.Cloud,
+                                                contentDescription = null,
+                                                tint = MusicPalette.primary,
+                                                modifier = Modifier.size(20.dp),
+                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                            Text(
+                                                "Google Drive",
+                                                style = MaterialTheme.typography.titleSmall,
+                                                modifier = Modifier.weight(1f),
+                                                maxLines = 1,
+                                            )
+                                        }
+                                        Text(
+                                            driveStatus,
+                                            modifier = Modifier.padding(start = 28.dp),
+                                            color = if (cloudSyncError != null ||
+                                                localSyncStatus.missingCount > 0)
+                                                MusicPalette.warning else MusicPalette.muted,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                    TextButton(
+                                        onClick = { requestDriveAccess() },
+                                        enabled = busy.isEmpty() && localLoaded,
+                                        modifier = Modifier.heightIn(min = 48.dp),
+                                        contentPadding = PaddingValues(horizontal = 5.dp),
                                     ) {
                                         Icon(
-                                            androidx.compose.material.icons.Icons.Rounded.Cloud,
+                                            androidx.compose.material.icons.Icons.Rounded.Sync,
                                             contentDescription = null,
-                                            tint = MusicPalette.primary,
-                                            modifier = Modifier.size(20.dp),
+                                            modifier = Modifier.size(19.dp),
                                         )
-                                        Spacer(Modifier.width(8.dp))
-                                        Text(
-                                            "Google Drive",
-                                            style = MaterialTheme.typography.titleSmall,
-                                            modifier = Modifier.weight(1f),
-                                            maxLines = 1,
-                                        )
-                                        TextButton(
-                                            onClick = { requestDriveAccess() },
-                                            enabled = busy.isEmpty() && localLoaded,
-                                            modifier = Modifier.heightIn(min = 48.dp),
-                                            contentPadding = PaddingValues(horizontal = 3.dp),
-                                        ) {
-                                            Icon(
-                                                androidx.compose.material.icons.Icons.Rounded.Sync,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(19.dp),
-                                            )
-                                            Spacer(Modifier.width(4.dp))
-                                            Text(if (cloudLinked) "Sincronizza" else "Collega",
-                                                style = MaterialTheme.typography.labelLarge)
-                                        }
-                                        if (cloudLinked) {
-                                            Box {
-                                                IconButton(
-                                                    onClick = { showCloudMenu = true },
-                                                    enabled = busy.isEmpty(),
-                                                ) {
-                                                    Icon(
-                                                        androidx.compose.material.icons.Icons.Rounded.MoreVert,
-                                                        contentDescription = "Opzioni Google Drive",
-                                                    )
-                                                }
-                                                DropdownMenu(
-                                                    expanded = showCloudMenu,
-                                                    onDismissRequest = { showCloudMenu = false },
-                                                ) {
-                                                    DropdownMenuItem(
-                                                        text = { Text("Scollega Drive") },
-                                                        onClick = {
-                                                            showCloudMenu = false
-                                                            showCloudDisconnect = true
-                                                        },
-                                                    )
-                                                }
+                                        Spacer(Modifier.width(4.dp))
+                                        Text(if (cloudLinked) "Sincronizza" else "Collega",
+                                            style = MaterialTheme.typography.labelLarge)
+                                    }
+                                    if (cloudLinked) {
+                                        Box {
+                                            IconButton(
+                                                onClick = { showCloudMenu = true },
+                                                enabled = busy.isEmpty(),
+                                            ) {
+                                                Icon(
+                                                    androidx.compose.material.icons.Icons.Rounded.MoreVert,
+                                                    contentDescription = "Opzioni Google Drive",
+                                                )
+                                            }
+                                            DropdownMenu(
+                                                expanded = showCloudMenu,
+                                                onDismissRequest = { showCloudMenu = false },
+                                            ) {
+                                                DropdownMenuItem(
+                                                    text = { Text("Scollega Drive") },
+                                                    onClick = {
+                                                        showCloudMenu = false
+                                                        showCloudDisconnect = true
+                                                    },
+                                                )
                                             }
                                         }
                                     }
-                                    Text(
-                                        driveStatus,
-                                        modifier = Modifier.padding(start = 27.dp),
-                                        color = if (cloudSyncError != null ||
-                                            localSyncStatus.missingCount > 0)
-                                            MusicPalette.warning else MusicPalette.muted,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
                                 }
                             }
                         }
