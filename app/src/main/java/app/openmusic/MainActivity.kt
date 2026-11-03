@@ -1223,28 +1223,12 @@ private fun OpenMusicApp() {
                     busy, onCancel = if (verifying) ({ analysisJob?.cancel() }) else null,
                 )
                 if (tab == 0) {
-                    Row(
-                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        FilterChip(
-                            selected = onlyMusic, onClick = { onlyMusic = true },
-                            label = { Text("Musica (" + musicCount + ")") },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MusicPalette.elevated,
-                                selectedLabelColor = MusicPalette.primary,
-                            ),
-                        )
-                        FilterChip(
-                            selected = !onlyMusic, onClick = { onlyMusic = false },
-                            label = { Text("Altri audio (" + (audioFiles.size - musicCount) + ")") },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MusicPalette.elevated,
-                                selectedLabelColor = MusicPalette.primary,
-                            ),
-                        )
-                    }
+                    MusicLibraryCategoryTabs(
+                        onlyMusic = onlyMusic,
+                        musicCount = musicCount,
+                        otherCount = audioFiles.size - musicCount,
+                        onSelect = { onlyMusic = it },
+                    )
                     OutlinedTextField(
                         value = search, onValueChange = { search = it },
                         modifier = Modifier.fillMaxWidth().height(48.dp),
@@ -1314,16 +1298,6 @@ private fun OpenMusicApp() {
                             ) {
                                 Text("Playlist", style = MaterialTheme.typography.titleLarge,
                                     modifier = Modifier.weight(1f))
-                                if (!PlaylistSelection.showSelector(playlists.size) &&
-                                    playlists.isNotEmpty()) {
-                                    IconButton(
-                                        onClick = { showDeleteChooser = true },
-                                        enabled = busy.isEmpty(),
-                                    ) {
-                                        Icon(Icons.Rounded.DeleteOutline,
-                                            contentDescription = "Elimina una playlist")
-                                    }
-                                }
                                 TextButton(onClick = { createDialog = true },
                                     enabled = busy.isEmpty(),
                                     modifier = Modifier.heightIn(min = 48.dp)) {
@@ -1341,6 +1315,18 @@ private fun OpenMusicApp() {
                                         contentDescription = null, modifier = Modifier.size(20.dp))
                                     Spacer(Modifier.width(3.dp))
                                     Text("Importa")
+                                }
+                                IconButton(
+                                    onClick = { showDeleteChooser = true },
+                                    enabled = busy.isEmpty() && playlists.isNotEmpty(),
+                                    modifier = Modifier.size(40.dp),
+                                ) {
+                                    Icon(
+                                        Icons.Rounded.DeleteOutline,
+                                        contentDescription = "Elimina una playlist",
+                                        tint = MusicPalette.primary,
+                                        modifier = Modifier.size(20.dp),
+                                    )
                                 }
                             }
                         }
@@ -1432,32 +1418,19 @@ private fun OpenMusicApp() {
                         if (PlaylistSelection.showSelector(playlists.size)) {
                             item {
                                 Row(
-                                    Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
+                                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
-                                    Row(
-                                        Modifier.weight(1f).horizontalScroll(rememberScrollState()),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    ) {
-                                        playlists.forEach { list ->
-                                            FilterChip(
-                                                selected = list.playlistId == selectedId,
-                                                onClick = { selectedId = list.playlistId },
-                                                label = { Text(list.name + " · " + list.tracks.size) },
-                                                colors = FilterChipDefaults.filterChipColors(
-                                                    selectedContainerColor = MusicPalette.elevated,
-                                                    selectedLabelColor = MusicPalette.primary,
-                                                ),
-                                            )
-                                        }
-                                    }
-                                    IconButton(
-                                        onClick = { showDeleteChooser = true },
-                                        enabled = busy.isEmpty(),
-                                    ) {
-                                        Icon(Icons.Rounded.DeleteOutline,
-                                            contentDescription = "Elimina una playlist",
-                                            tint = MusicPalette.muted)
+                                    playlists.forEach { list ->
+                                        FilterChip(
+                                            selected = list.playlistId == selectedId,
+                                            onClick = { selectedId = list.playlistId },
+                                            label = { Text(list.name + " · " + list.tracks.size) },
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                selectedContainerColor = MusicPalette.elevated,
+                                                selectedLabelColor = MusicPalette.primary,
+                                            ),
+                                        )
                                     }
                                 }
                             }

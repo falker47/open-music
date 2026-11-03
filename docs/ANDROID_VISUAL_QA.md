@@ -86,3 +86,38 @@ New device checks — still OPEN:
   music files and other playlists persist and the selection updates.
 - Drive divergence: local/remote details, no automatic newest-version choice,
   append-only deletion when explicitly selected, manual restore and both.
+
+## Refinements after first real-device QA — 3 November 2026
+
+Feedback: everything not explicitly mentioned in this cycle remains approved.
+
+- Now Playing: the cover, song metadata, *visible Slider track* and timestamps
+  share exactly the same horizontal bounds; Material Slider's internal thumb
+  inset is compensated without compromising drag preview. The music group is
+  vertically centered in the space below the header and scrolls on small screens.
+- Controls: Repeat and Shuffle are above the lower Previous/Play/Next group;
+  the Queue button sits centrally at the top of the arc under the seek bar,
+  no duplicate Queue button in the header.
+- Playlist: one orange, smaller trash icon immediately to the right of Import,
+  even when several playlists exist; confirmation logic and storage unchanged.
+- Queue: long press **anywhere on a future song** and move up/down, using stable
+  Media3 media IDs as list keys to preserve the gesture across recomposition.
+  The list temporarily disables its own scrolling while dragging. Accessible
+  arrow controls remain available for longer queues and TalkBack.
+- Library: the Music/Other audio tabs fill equal halves and carry note/headphone
+  icons. Destination action shows an arrow plus the target tab's icon
+  (right + headphones from Music; note + left from Other). Add-to-playlist is
+  a simple orange plus, with no large tonal circle. Add-to-queue stays distinct.
+- Launcher icon: adaptive vector launcher and monochrome themed icon, using the
+  established charcoal background and `#ED8840` note/sound arc. AndroidManifest
+  now references both normal and round launcher resources; no new dependency.
+
+Device QA **OPEN**: compare screenshot of Now Playing portrait/landscape and
+large font; check vertical centering and precise slider/art margins, that the
+upper Queue button is independently tappable, and controls do not overlap.
+Verify long-press drag from both artwork and title, including multiple positions,
+versus scrolling and single-tap seek; verify changes also control Media3 Next.
+Check the 2 equal category tabs, destination icons and action tap targets.
+Verify launcher on home screen, app switcher, notification and themed Android
+icons where supported. CI compile/assets checks do not establish pixel-perfect
+layout or icon rendering on each manufacturer.
