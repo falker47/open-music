@@ -442,9 +442,10 @@ internal fun MusicTrackRow(
                 }
             }
         }
-        // Equal, compact action slots reserve more width for track titles.
+        // Separate song metadata from the compact group of three actions.
+        Spacer(Modifier.width(8.dp))
         Row(
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            horizontalArrangement = Arrangement.spacedBy(1.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(
@@ -757,16 +758,16 @@ internal fun MusicNowPlaying(
 ) {
     BoxWithConstraints(modifier.background(MusicPalette.background)) {
         val controlWidth: Dp = (maxWidth - 36.dp).coerceAtMost(340.dp)
-        // Keep the art and its aligned metadata/seek track within the content width.
-        val artSize: Dp = (maxWidth - 36.dp).coerceAtMost(maxHeight * 0.36f)
-            .coerceAtMost(356.dp).coerceAtLeast(152.dp)
-        val skipButtonSize = 56.dp
+        // Give the square artwork the full available horizontal presence.
+        // Short screens scroll the whole player instead of shrinking the artwork.
+        val artSize: Dp = (maxWidth - 36.dp).coerceAtMost(356.dp)
+        val skipButtonSize = 62.dp
         val playButtonSize = 74.dp
-        // Midpoint between each 48dp outer control and the centered Queue button;
-        // on smaller screens leave clearance around the larger Play button.
-        val skipCenter = ((24.dp + controlWidth / 2) / 2)
-            .coerceAtMost(controlWidth / 2 - (skipButtonSize + playButtonSize) / 2 - 6.dp)
+        // Keep a visible 20dp gap beside Play, without clipping narrow screens.
+        val skipCenter = (controlWidth / 2 - (skipButtonSize + playButtonSize) / 2 - 20.dp)
             .coerceAtLeast(skipButtonSize / 2)
+        // Bottom-aligning unequal buttons would put their icon centers on different lines.
+        val skipVerticalOffset = (skipButtonSize - playButtonSize) / 2
         Column(
             Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 6.dp),
         ) {
@@ -793,7 +794,7 @@ internal fun MusicNowPlaying(
                 ) {
                     MusicArt(
                         source = uri, cache = cache,
-                        modifier = Modifier.size(artSize)
+                        modifier = Modifier.width(artSize).aspectRatio(1f)
                             .shadow(12.dp, RoundedCornerShape(18.dp)),
                         quality = 720,
                     )
@@ -837,7 +838,7 @@ internal fun MusicNowPlaying(
                         IconButton(
                             onClick = onToggleRepeatOne,
                             modifier = Modifier.align(Alignment.TopStart)
-                                .size(48.dp),
+                                .offset(x = 18.dp).size(48.dp),
                         ) {
                             Icon(
                                 if (repeatOneEnabled) Icons.Rounded.RepeatOne
@@ -846,7 +847,7 @@ internal fun MusicNowPlaying(
                                     "Disattiva ripetizione brano" else "Ripeti questa canzone",
                                 tint = if (repeatOneEnabled) MusicPalette.primary
                                     else MusicPalette.muted,
-                                modifier = Modifier.size(24.dp),
+                                modifier = Modifier.size(27.dp),
                             )
                         }
                         IconButton(
@@ -860,7 +861,7 @@ internal fun MusicNowPlaying(
                         IconButton(
                             onClick = onToggleShuffle,
                             modifier = Modifier.align(Alignment.TopEnd)
-                                .size(48.dp),
+                                .offset(x = (-18).dp).size(48.dp),
                         ) {
                             Icon(Icons.Rounded.Shuffle,
                                 contentDescription = if (shuffleEnabled)
@@ -868,17 +869,17 @@ internal fun MusicNowPlaying(
                                     else "Attiva riproduzione casuale",
                                 tint = if (shuffleEnabled) MusicPalette.primary
                                     else MusicPalette.muted,
-                                modifier = Modifier.size(24.dp))
+                                modifier = Modifier.size(27.dp))
                         }
                         IconButton(
                             onClick = onPrevious,
                             modifier = Modifier.align(Alignment.BottomStart)
-                                .offset(x = skipCenter - skipButtonSize / 2)
+                                .offset(x = skipCenter - skipButtonSize / 2, y = skipVerticalOffset)
                                 .size(skipButtonSize),
                         ) {
                             Icon(Icons.Rounded.SkipPrevious,
                                 contentDescription = "Brano precedente",
-                                tint = MusicPalette.text, modifier = Modifier.size(33.dp))
+                                tint = MusicPalette.text, modifier = Modifier.size(52.dp))
                         }
                         FilledIconButton(
                             onClick = onPlayPause,
@@ -895,12 +896,13 @@ internal fun MusicNowPlaying(
                         IconButton(
                             onClick = onNext,
                             modifier = Modifier.align(Alignment.BottomStart)
-                                .offset(x = controlWidth - skipCenter - skipButtonSize / 2)
+                                .offset(x = controlWidth - skipCenter - skipButtonSize / 2,
+                                    y = skipVerticalOffset)
                                 .size(skipButtonSize),
                         ) {
                             Icon(Icons.Rounded.SkipNext,
                                 contentDescription = "Brano successivo",
-                                tint = MusicPalette.text, modifier = Modifier.size(33.dp))
+                                tint = MusicPalette.text, modifier = Modifier.size(52.dp))
                         }
                     }
                 }
