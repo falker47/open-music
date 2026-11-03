@@ -99,6 +99,7 @@ private fun OpenMusicApp() {
     var analysisJob by remember { mutableStateOf<Job?>(null) }
     var onlyMusic by rememberSaveable { mutableStateOf(true) }
     var playlists by remember { mutableStateOf(emptyList<PortablePlaylist>()) }
+    var deletedIds by remember { mutableStateOf(emptySet<String>()) }
     var selectedId by remember { mutableStateOf<String?>(null) }
     var tab by remember { mutableIntStateOf(0) }
     var search by remember { mutableStateOf("") }
@@ -153,6 +154,7 @@ private fun OpenMusicApp() {
         return try {
             storage.save(updated)
             playlists = updated
+            deletedIds = storage.loadState().deleted.map { it.playlistId }.toSet()
             true
         } catch (failure: Exception) {
             notifyUser("Impossibile salvare: " + (failure.localizedMessage ?: "errore"))
@@ -324,6 +326,9 @@ private fun OpenMusicApp() {
                         cloudCoordinator.sync(grant, cloudChoices)
                     }
                     cloudState = withContext(Dispatchers.IO) { cloudJournal.load() }
+                    deletedIds = withContext(Dispatchers.IO) {
+                        storage.loadState().deleted.map { it.playlistId }.toSet()
+                    }
                     if (result.conflicts.isNotEmpty()) {
                         cloudConflicts = result.conflicts
                         notifyUser("Conflitto Drive: scegli quale versione conservare")
@@ -664,9 +669,11 @@ private fun OpenMusicApp() {
                 val victim = playlists.firstOrNull { it.playlistId == id }
                     ?: return@withLock
                 try {
-                    val remaining = withContext(Dispatchers.IO) {
-                        storage.deletePlaylist(id).playlists
+                    val state = withContext(Dispatchers.IO) {
+                        storage.deletePlaylist(id)
                     }
+                    val remaining = state.playlists
+                    deletedIds = state.deleted.map { it.playlistId }.toSet()
                     playlists = remaining
                     if (selectedId == id) selectedId = remaining.firstOrNull()?.playlistId
                     refreshMatches(remaining, localCopies)
@@ -683,7 +690,9 @@ private fun OpenMusicApp() {
 
     LaunchedEffect(Unit) {
         try {
-            playlists = withContext(Dispatchers.IO) { storage.load() }
+            val state = withContext(Dispatchers.IO) { storage.loadState() }
+            playlists = state.playlists
+            deletedIds = state.deleted.map { it.playlistId }.toSet()
             manualKinds = withContext(Dispatchers.IO) { kindStorage.load() }
             selectedId = playlists.firstOrNull()?.playlistId
             localLoaded = true
@@ -1129,7 +1138,10 @@ private fun OpenMusicApp() {
         cloudConflicts.isNotEmpty() -> "Conflitto: scegli una versione"
         cloudSyncError != null -> cloudSyncError!!
         !cloudLinked -> "Playlist solo sul telefono"
-        localSyncStatus.missingCount > 0 -> "Playlist locali mancanti · verifica Drive"
+        localSyncStatus.missingCount > 0 ->
+            if (deletedIds.any { cloudState.checkpoints[it]?.deleted == false })
+                "Eliminazione playlist da confermare su Drive"
+            else "Playlist locali mancanti · verifica Drive"
         localSyncStatus.pendingCount > 0 -> localSyncStatus.pendingCount.toString() +
             " playlist da sincronizzare"
         else -> "Nessuna modifica da salvare"

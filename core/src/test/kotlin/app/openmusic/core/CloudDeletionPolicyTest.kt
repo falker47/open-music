@@ -33,7 +33,7 @@ class CloudDeletionPolicyTest {
         val remoteDelete = base.copy(revisionId = "rev-2", parents = listOf("rev-1"),
             deleted = true)
         val decision = CloudSyncPlanner.decide("playlist-1", null,
-            CloudCheckpoint(remoteDelete.revisionId, remoteDelete.playlistDigest),
+            CloudCheckpoint(remoteDelete.revisionId, remoteDelete.playlistDigest, deleted = true),
             listOf(base, remoteDelete), locallyDeleted = true)
         assertEquals(CloudSyncAction.ADOPT_TOMBSTONE, decision.action)
     }
