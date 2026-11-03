@@ -97,3 +97,35 @@ Official references:
 - Confirm local reclassification and SHA cache aren't uploaded. Do not treat Android compile as successful authorization, remote transfer or second-device recovery.
 
 **Not done:** automatic background sync, pCloud adapter, streaming or cloud audio upload; no main merge/Play Store release.
+
+## Explicit playlist deletion and conflicts — 3 November 2026
+
+Local deletion is stored atomically as `deleted_playlists` metadata in the
+app-private archive (portable JSON v1 playlist contract unchanged). This
+prevents a missing local list from being silently treated as permission to
+download it again. The files on the phone remain untouched. On the next manual
+Drive synchronization, an unsynced local deletion conflicting with an existing
+remote snapshot prompts one of: **restore Drive**, **keep deletion** (append an
+explicit remote tombstone), or postpone. No remote historical files are removed.
+
+A cloud tombstone is append-only, with a `deleted=true` revision descriptor.
+A fresh installation can adopt an already-confirmed tombstone without
+resurrecting a playlist. A cloud deletion with a locally present playlist always
+requires an explicit decision; a local copy can be preserved separately when
+resolving a fork. Checkpoint records also carry `deleted` to avoid false
+"missing local playlist" warnings after acknowledgement.
+
+Conflict previews include track counts and entry-ID-based additions/removals
+when a local copy exists. The `updatedAt` field comes from device-maintained
+playlist metadata, **not** a reliable cross-device clock. Therefore it is shown
+as contextual information only, never as an automatic last-write-wins rule.
+
+**Reinstall caveat:** if a local deletion has NOT been manually synchronized
+and the user removes app data or uninstalls the app, the local tombstone is lost.
+An undeleted remote version may download on a later fresh installation.
+Synchronize and confirm the cloud tombstone before wiping the old device.
+
+QA still required with two actual Android devices/Google Drive and reinstall,
+including interrupted upload, duplicate entry IDs, unrelated local audio,
+revision forks and explicit restore. JVM planner tests are not a real OAuth or
+device-storage test.

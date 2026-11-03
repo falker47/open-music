@@ -43,3 +43,46 @@ No Play Store promotion or merge into main before actual device feedback.
 - **Coda** opens a sheet showing the current Media3 session's tracks; tapping an item seeks to that item. Under shuffle, the sheet explicitly says it lists the original order (the upcoming random order is not falsely predicted).
 
 Keep previous Drive metadata-only, offline local-first and JSON v1 QA unchanged. Android compile/test is not physical UI or playback acceptance; record real-device observations separately.
+
+## Session queue and visual identity — 3 November 2026
+
+Selected real/visual references (inspiration only, no image assets copied):
+
+- Spotify player/library/queue structure, via screenshot-based wireframes:
+  https://whimsical.com/templates/music-streaming-app-wireframe
+  Useful pattern: stable mini-player, compact music rows, dedicated upcoming queue.
+- Refero, Luminary mini-player/playlist pattern:
+  https://refero.design/screens/43afd085-26bb-42c9-8770-de044c756af4
+  Useful pattern: artwork as primary visual anchor and music metadata hierarchy.
+- Dribbble, Sonic Curator concept:
+  https://dribbble.com/shots/27756026-Music-Player-App-UI-Mobile-App-Kit
+  Useful color direction: charcoal and warm amber. Its oversized membership
+  widgets/cards are *not* adopted; it is a concept, not a production reference.
+
+Original Open Music implementation: primary `#ED8840`, restrained charcoal
+surfaces, smaller now-playing title, artwork-led layout without decorative
+gradient. Repeat is left of Previous; Shuffle is right of Next.
+
+The queue sheet is session-scoped and uses the physical Media3 timeline rather
+than showing an inaccurate original order when shuffled. Current track first,
+then future tracks. Accessible arrow buttons supplement long-press dragging.
+The library and playlist rows expose **Add to queue** separately from **Add to
+playlist**. A track picker can construct a queue from library or saved lists;
+editing the queue does not change the saved playlists.
+
+New device checks — still OPEN:
+- Small screen / TalkBack: header, queue button, playlist deletion action and
+  modal list/dialog fit; long titles and 50+ songs remain navigable.
+- Player left-to-right: Repeat, Previous, Play/Pause, Next, Shuffle; seek preview
+  still works with screen rotation/recreation.
+- Queue with shuffle OFF/ON: compare the next five rows to actual next tracks
+  as playback advances, including after Home and reopening Activity.
+- Reorder future tracks with long press and accessible up/down arrows. Current
+  track plays continuously; Media3 notification Next follows the displayed order.
+- Remove future item, add songs from Library and Playlist, and open empty queue;
+  saved playlists must stay byte-for-byte unchanged.
+- Repeat-one: visible warning in queue and no implicit advance.
+- Multiple playlists: delete one only after explicit name confirmation; ensure
+  music files and other playlists persist and the selection updates.
+- Drive divergence: local/remote details, no automatic newest-version choice,
+  append-only deletion when explicitly selected, manual restore and both.

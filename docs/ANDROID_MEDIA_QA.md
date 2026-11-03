@@ -46,3 +46,23 @@ Permanent signing, seamless upgrades and data migration remain deferred.
 No keystore, credentials, personal audio files or private device data are
 committed or uploaded. CI and a downloadable APK alone do not constitute
 successful device QA. Actions artifacts remain disabled due to quota.
+
+## Effective session queue — 3 November 2026
+
+Open Music exposes a Media3 physical queue that is the actual playback order.
+When Shuffle is enabled, the service shuffles **only upcoming items** and moves
+them within its Media3 timeline without resetting the current item. The
+controller reads that same timeline in "Coda". Switching Shuffle off restores
+the surviving future items in their original session order, without replaying
+already-played tracks. Media3's opaque shuffle flag is kept off; the UI
+receives an explicit session mode via Media3 extras. External transport
+controls (notification/headset) use the same physical queue.
+
+A custom playlist is session-scoped inside the existing PlaybackService:
+enqueue, reorder and removal modify the Media3 timeline directly. No second
+playback source, persisted queue, or cloud upload is added. On activity
+recreation a fresh controller reads the service timeline and mode.
+
+Android QA OPEN: shuffle future order, repeat-one, manual drag vs arrows,
+continuity of current track, background Next, queue after Activity recreation,
+large queue behavior, Bluetooth/headset transport actions and audio focus.
