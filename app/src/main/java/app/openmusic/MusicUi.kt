@@ -71,6 +71,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -233,10 +234,12 @@ internal fun MusicArt(
 
 @Composable
 internal fun MusicBrandIdentity(modifier: Modifier = Modifier) {
-    Text(
-        "Open Music", modifier = modifier, color = MusicPalette.primary,
-        style = MaterialTheme.typography.headlineSmall,
-        maxLines = 1, overflow = TextOverflow.Ellipsis,
+    Image(
+        painter = painterResource(R.drawable.open_music_wordmark),
+        contentDescription = "Open Music",
+        modifier = modifier.height(52.dp),
+        contentScale = ContentScale.Fit,
+        alignment = Alignment.CenterStart,
     )
 }
 
@@ -572,12 +575,13 @@ internal fun MusicPlaylistAddPicker(
     playlistName: String, candidates: List<AudioFile>, selectedUris: Set<String>,
     query: String, saving: Boolean, onQuery: (String) -> Unit,
     onToggle: (String) -> Unit, onCancel: () -> Unit, onConfirm: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val results = remember(candidates, query) {
         candidates.filter { AudioSearch.matches(it.title, it.artist, query) }
     }
     Column(
-        Modifier.fillMaxSize().background(MusicPalette.background)
+        modifier.fillMaxSize().background(MusicPalette.background)
             .padding(horizontal = 18.dp),
     ) {
         Row(Modifier.fillMaxWidth().heightIn(min = 60.dp),

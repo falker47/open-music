@@ -1267,6 +1267,7 @@ private fun OpenMusicApp() {
                     saving = pickerSaving, onQuery = { pickerQuery = it },
                     onToggle = { pickerSelectedUris = PlaylistBulkAdd.toggle(pickerSelectedUris, it) },
                     onCancel = { closePicker() }, onConfirm = { confirmPicker() },
+                    modifier = Modifier.padding(insets),
                 )
             }
         } else if (showNowPlaying && nowTitle.isNotEmpty()) {
