@@ -457,6 +457,7 @@ internal fun MusicTrackRow(
             ) {
                 // The arrow almost touches the destination icon.
                 Row(
+                    modifier = Modifier.offset(x = (-2).dp),
                     horizontalArrangement = Arrangement.spacedBy((-2).dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -481,7 +482,8 @@ internal fun MusicTrackRow(
             IconButton(onClick = onAdd, modifier = Modifier.size(40.dp)) {
                 Icon(Icons.Rounded.Add,
                     contentDescription = "Aggiungi " + file.title + " a una playlist",
-                    tint = MusicPalette.primary, modifier = Modifier.size(25.dp))
+                    tint = MusicPalette.primary,
+                    modifier = Modifier.offset(x = (-2).dp).size(25.dp))
             }
         }
     }
