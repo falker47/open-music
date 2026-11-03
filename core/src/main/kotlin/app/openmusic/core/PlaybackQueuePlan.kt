@@ -29,4 +29,15 @@ object PlaybackQueuePlan {
     fun canMoveUpcoming(from: Int, to: Int, currentIndex: Int, count: Int): Boolean =
         from != to && canEditUpcoming(from, currentIndex, count) &&
             canEditUpcoming(to, currentIndex, count)
+
+    /** One threshold crossing is exactly one future-track move; no current-item skips. */
+    fun dragTarget(
+        from: Int, totalDragPx: Float, thresholdPx: Float,
+        currentIndex: Int, count: Int,
+    ): Int? {
+        if (!totalDragPx.isFinite() || !thresholdPx.isFinite() ||
+            thresholdPx <= 0f || kotlin.math.abs(totalDragPx) < thresholdPx) return null
+        val to = from + if (totalDragPx > 0f) 1 else -1
+        return to.takeIf { canMoveUpcoming(from, it, currentIndex, count) }
+    }
 }
