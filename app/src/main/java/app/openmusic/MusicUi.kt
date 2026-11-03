@@ -11,6 +11,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,6 +23,12 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.FileDownload
 import androidx.compose.material.icons.rounded.FileUpload
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.Repeat
+import androidx.compose.material.icons.rounded.RepeatOne
+import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.MusicNote
@@ -56,6 +63,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.openmusic.core.MatchStatus
+import app.openmusic.core.PlaybackUiLogic
 import app.openmusic.core.PlaylistVerification
 import app.openmusic.core.VerificationDisplay
 import kotlinx.coroutines.Dispatchers
@@ -72,7 +80,7 @@ internal object MusicPalette {
     val surface = Color(0xFF1E1D1C)
     val elevated = Color(0xFF2A2623)
     val border = Color(0xFF403832)
-    val primary = Color(0xFFFFAE6B)
+    val primary = Color(0xFFED8840)
     val primaryDark = Color(0xFF2D190C)
     val text = Color(0xFFF8F5F1)
     val muted = Color(0xFFC1B8B0)
@@ -224,7 +232,7 @@ internal fun MusicHeader(
             modifier = Modifier.heightIn(min = 48.dp),
             contentPadding = PaddingValues(horizontal = 8.dp),
         ) {
-            Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(19.dp))
+            Icon(Icons.Rounded.FolderOpen, contentDescription = null, modifier = Modifier.size(19.dp))
             Spacer(Modifier.width(5.dp))
             Text("Scansiona")
         }
@@ -402,45 +410,53 @@ internal fun MusicPlaylistSummary(
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp), color = MusicPalette.surface,
-        border = BorderStroke(1.dp, MusicPalette.border.copy(alpha = 0.70f)),
+        border = BorderStroke(1.dp, MusicPalette.border.copy(alpha = 0.7f)),
     ) {
-        Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-            Text(name, style = MaterialTheme.typography.titleLarge,
-                maxLines = 2, overflow = TextOverflow.Ellipsis)
-            val detail = when {
-                analyzing -> "$trackCount brani · $available confermati · analisi"
-                needsVerification -> "$trackCount brani · da verificare"
-                else -> "$trackCount brani · $available disponibili"
-            }
-            Text(detail, color = MusicPalette.muted,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+            // Title/track count and both actions share one row, even on narrow devices.
             Row(
                 Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(onClick = onRelink, enabled = !busy,
+                Column(Modifier.weight(1f)) {
+                    Text(name, style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    val detail = when {
+                        analyzing -> "$trackCount brani · $available confermati"
+                        needsVerification -> "$trackCount brani · da verificare"
+                        else -> "$trackCount brani · $available disponibili"
+                    }
+                    Text(detail, color = MusicPalette.muted,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                TextButton(
+                    onClick = onRelink, enabled = !busy,
                     modifier = Modifier.heightIn(min = 48.dp),
-                    contentPadding = PaddingValues(horizontal = 7.dp)) {
+                    contentPadding = PaddingValues(horizontal = 3.dp),
+                ) {
                     Icon(Icons.Rounded.Link, contentDescription = null,
                         modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Trova file", maxLines = 1)
+                    Spacer(Modifier.width(3.dp))
+                    Text("Trova file", maxLines = 1,
+                        style = MaterialTheme.typography.labelMedium)
                 }
-                Spacer(Modifier.width(8.dp))
-                TextButton(onClick = onExport, enabled = !busy,
+                TextButton(
+                    onClick = onExport, enabled = !busy,
                     modifier = Modifier.heightIn(min = 48.dp),
-                    contentPadding = PaddingValues(horizontal = 7.dp)) {
+                    contentPadding = PaddingValues(horizontal = 3.dp),
+                ) {
                     Icon(Icons.Rounded.FileUpload, contentDescription = null,
                         modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Esporta", maxLines = 1)
+                    Spacer(Modifier.width(3.dp))
+                    Text("Esporta", maxLines = 1,
+                        style = MaterialTheme.typography.labelMedium)
                 }
             }
             if (unreadableCount > 0 && !analyzing) {
-                Text(unreadableCount.toString() + " audio non leggibili · usa Trova file",
-                    style = MaterialTheme.typography.labelSmall, color = MusicPalette.warning)
+                Text("$unreadableCount audio non leggibili · usa Trova file",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MusicPalette.warning)
             }
             if (missingTitles.isNotEmpty()) {
                 TextButton(onClick = { showMissing = !showMissing },
@@ -531,22 +547,48 @@ internal fun MusicPlaybackSeek(
     var dragging by remember(trackKey) { mutableStateOf<Float?>(null) }
     val fraction = if (durationMs > 0L)
         (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
-    Slider(
-        value = dragging ?: fraction,
-        onValueChange = { dragging = it },
-        onValueChangeFinished = {
-            dragging?.let { if (durationMs > 0L) onSeek((it * durationMs).toLong()) }
-            dragging = null
-        },
-        enabled = durationMs > 0L,
-        modifier = Modifier.fillMaxWidth().height(if (compact) 32.dp else 46.dp),
-        colors = SliderDefaults.colors(
-            thumbColor = MusicPalette.primary,
-            activeTrackColor = MusicPalette.primary,
-            inactiveTrackColor = MusicPalette.border,
-            disabledThumbColor = MusicPalette.subtle,
-        ),
-    )
+    BoxWithConstraints(
+        modifier = Modifier.fillMaxWidth().height(if (compact) 32.dp else 82.dp),
+    ) {
+        // Live timestamp appears above the thumb while dragging the full player seek bar.
+        val preview = dragging
+        if (!compact && preview != null && durationMs > 0L) {
+            val bubbleWidth = 64.dp
+            val thumbCenter = 16.dp + (maxWidth - 32.dp).coerceAtLeast(0.dp) * preview
+            val bubbleX = (thumbCenter - bubbleWidth / 2)
+                .coerceIn(0.dp, (maxWidth - bubbleWidth).coerceAtLeast(0.dp))
+            Surface(
+                modifier = Modifier.align(Alignment.TopStart)
+                    .offset(x = bubbleX).width(bubbleWidth),
+                shape = RoundedCornerShape(10.dp),
+                color = MusicPalette.elevated,
+                border = BorderStroke(1.dp, MusicPalette.primary),
+            ) {
+                Text(formatMusicTime(PlaybackUiLogic.seekTargetMs(preview, durationMs)),
+                    modifier = Modifier.padding(vertical = 6.dp),
+                    color = MusicPalette.text,
+                    style = MaterialTheme.typography.labelMedium,
+                    textAlign = TextAlign.Center)
+            }
+        }
+        Slider(
+            value = dragging ?: fraction,
+            onValueChange = { dragging = it },
+            onValueChangeFinished = {
+                dragging?.let { onSeek(PlaybackUiLogic.seekTargetMs(it, durationMs)) }
+                dragging = null
+            },
+            enabled = durationMs > 0L,
+            modifier = Modifier.fillMaxWidth().align(Alignment.BottomCenter)
+                .height(if (compact) 32.dp else 50.dp),
+            colors = SliderDefaults.colors(
+                thumbColor = MusicPalette.primary,
+                activeTrackColor = MusicPalette.primary,
+                inactiveTrackColor = MusicPalette.border,
+                disabledThumbColor = MusicPalette.subtle,
+            ),
+        )
+    }
 }
 
 @Composable
@@ -603,10 +645,13 @@ internal fun MusicMiniPlayer(
 
 @Composable
 internal fun MusicNowPlaying(
-    modifier: Modifier, title: String, artist: String, uri: String?,
+    modifier: Modifier,
+    title: String, artist: String, album: String, uri: String?,
     cache: LocalArtworkCache, playing: Boolean, positionMs: Long, durationMs: Long,
+    shuffleEnabled: Boolean, repeatOneEnabled: Boolean, queueSize: Int,
     onClose: () -> Unit, onSeek: (Long) -> Unit, onPrevious: () -> Unit,
     onPlayPause: () -> Unit, onNext: () -> Unit,
+    onToggleShuffle: () -> Unit, onToggleRepeatOne: () -> Unit, onOpenQueue: () -> Unit,
 ) {
     BoxWithConstraints(
         modifier.background(
@@ -615,41 +660,56 @@ internal fun MusicNowPlaying(
             ),
         ),
     ) {
-        val artSize: Dp = (maxWidth - 48.dp).coerceAtMost(maxHeight * 0.42f)
-            .coerceAtMost(360.dp).coerceAtLeast(180.dp)
+        val artSize: Dp = (maxWidth - 48.dp).coerceAtMost(maxHeight * 0.39f)
+            .coerceAtMost(350.dp).coerceAtLeast(160.dp)
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 12.dp),
+                .padding(horizontal = 22.dp, vertical = 10.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onClose) {
+            Box(Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                IconButton(onClick = onClose, modifier = Modifier.align(Alignment.CenterStart)) {
                     Icon(Icons.Rounded.KeyboardArrowDown,
                         contentDescription = "Chiudi In riproduzione",
-                        tint = MusicPalette.text, modifier = Modifier.size(30.dp))
+                        tint = MusicPalette.text, modifier = Modifier.size(28.dp))
                 }
-                Spacer(Modifier.weight(1f))
-                Text("IN RIPRODUZIONE", style = MaterialTheme.typography.labelSmall,
-                    letterSpacing = 1.5.sp, color = MusicPalette.muted)
-                Spacer(Modifier.weight(1f))
-                Spacer(Modifier.size(48.dp))
+                Text("IN RIPRODUZIONE",
+                    modifier = Modifier.align(Alignment.Center),
+                    style = MaterialTheme.typography.labelSmall,
+                    letterSpacing = 1.sp, color = MusicPalette.muted)
+                TextButton(
+                    onClick = onOpenQueue, enabled = queueSize > 0,
+                    modifier = Modifier.align(Alignment.CenterEnd).heightIn(min = 48.dp),
+                    contentPadding = PaddingValues(horizontal = 5.dp),
+                ) {
+                    Icon(Icons.Rounded.QueueMusic, contentDescription = null,
+                        modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(3.dp))
+                    Text("Coda", style = MaterialTheme.typography.labelMedium)
+                }
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(14.dp))
             MusicArt(
                 source = uri, cache = cache,
-                modifier = Modifier.size(artSize).shadow(22.dp, RoundedCornerShape(24.dp)),
+                modifier = Modifier.size(artSize).shadow(16.dp, RoundedCornerShape(20.dp)),
                 quality = 720,
             )
-            Spacer(Modifier.height(22.dp))
+            Spacer(Modifier.height(20.dp))
             Column(Modifier.fillMaxWidth()) {
                 Text(title, style = MaterialTheme.typography.headlineMedium,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(4.dp))
                 Text(artist.ifBlank { "Artista sconosciuto" },
-                    color = MusicPalette.muted, style = MaterialTheme.typography.bodyLarge,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    color = MusicPalette.text, style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (album.isNotBlank()) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(album, color = MusicPalette.muted,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(6.dp))
             MusicPlaybackSeek(title + "|" + uri, positionMs, durationMs, onSeek)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(formatMusicTime(positionMs), color = MusicPalette.muted,
@@ -657,18 +717,25 @@ internal fun MusicNowPlaying(
                 Text(if (durationMs > 0L) formatMusicTime(durationMs) else "--:--",
                     color = MusicPalette.muted, style = MaterialTheme.typography.labelMedium)
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(18.dp))
             Row(
-                Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly,
+                Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = onPrevious, modifier = Modifier.size(62.dp)) {
+                IconButton(onClick = onToggleShuffle, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Rounded.Shuffle,
+                        contentDescription = if (shuffleEnabled)
+                            "Disattiva riproduzione casuale" else "Attiva riproduzione casuale",
+                        tint = if (shuffleEnabled) MusicPalette.primary else MusicPalette.muted,
+                        modifier = Modifier.size(24.dp))
+                }
+                IconButton(onClick = onPrevious, modifier = Modifier.size(52.dp)) {
                     Icon(Icons.Rounded.SkipPrevious, contentDescription = "Brano precedente",
-                        tint = MusicPalette.text, modifier = Modifier.size(38.dp))
+                        tint = MusicPalette.text, modifier = Modifier.size(31.dp))
                 }
                 FilledIconButton(
                     onClick = onPlayPause,
-                    modifier = Modifier.size(74.dp),
+                    modifier = Modifier.size(72.dp),
                     shape = CircleShape,
                     colors = IconButtonDefaults.filledIconButtonColors(
                         containerColor = MusicPalette.primary, contentColor = MusicPalette.primaryDark,
@@ -676,14 +743,91 @@ internal fun MusicNowPlaying(
                 ) {
                     Icon(if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                         contentDescription = if (playing) "Pausa" else "Riproduci",
-                        modifier = Modifier.size(41.dp))
+                        modifier = Modifier.size(39.dp))
                 }
-                IconButton(onClick = onNext, modifier = Modifier.size(62.dp)) {
+                IconButton(onClick = onNext, modifier = Modifier.size(52.dp)) {
                     Icon(Icons.Rounded.SkipNext, contentDescription = "Brano successivo",
-                        tint = MusicPalette.text, modifier = Modifier.size(38.dp))
+                        tint = MusicPalette.text, modifier = Modifier.size(31.dp))
+                }
+                IconButton(onClick = onToggleRepeatOne, modifier = Modifier.size(48.dp)) {
+                    Icon(if (repeatOneEnabled) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
+                        contentDescription = if (repeatOneEnabled)
+                            "Disattiva ripetizione brano" else "Ripeti questa canzone",
+                        tint = if (repeatOneEnabled) MusicPalette.primary else MusicPalette.muted,
+                        modifier = Modifier.size(24.dp))
                 }
             }
-            Spacer(Modifier.height(30.dp))
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+/** Snapshot of the Media3 session's current queue; never uploaded or persisted. */
+internal data class MusicQueueEntry(
+    val index: Int, val title: String, val artist: String, val uri: String?,
+)
+
+@Composable
+internal fun MusicQueueSheet(
+    entries: List<MusicQueueEntry>, currentIndex: Int, shuffleEnabled: Boolean,
+    cache: LocalArtworkCache, onSelect: (Int) -> Unit, onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = MusicPalette.surface,
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+            Row(
+                Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Coda di riproduzione", style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.weight(1f))
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Rounded.Close, contentDescription = "Chiudi coda")
+                }
+            }
+            if (shuffleEnabled) {
+                Text("Ordine casuale attivo · elenco nell'ordine originale",
+                    style = MaterialTheme.typography.bodySmall, color = MusicPalette.muted)
+            }
+            if (entries.isEmpty()) {
+                Text("Nessun brano in coda", modifier = Modifier.padding(vertical = 20.dp),
+                    color = MusicPalette.muted)
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 460.dp),
+                    contentPadding = PaddingValues(bottom = 22.dp),
+                ) {
+                    items(entries.size) { position ->
+                        val item = entries[position]
+                        val selected = item.index == currentIndex
+                        Row(
+                            Modifier.fillMaxWidth().heightIn(min = 64.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (selected) MusicPalette.elevated else Color.Transparent)
+                                .clickable { onSelect(item.index) }
+                                .padding(horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            MusicArt(item.uri, cache, Modifier.size(44.dp), quality = 128)
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(item.title, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = if (selected) MusicPalette.primary else MusicPalette.text)
+                                Text(item.artist.ifBlank { "Artista sconosciuto" },
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    style = MaterialTheme.typography.bodySmall, color = MusicPalette.muted)
+                            }
+                            if (selected) {
+                                Icon(Icons.Rounded.PlayArrow,
+                                    contentDescription = "Brano corrente",
+                                    tint = MusicPalette.primary)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

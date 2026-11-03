@@ -30,3 +30,16 @@ authorization and manual cloud sync retain their previous behavior.
 
 Build and core tests are necessary but do **not** establish this visual QA.
 No Play Store promotion or merge into main before actual device feedback.
+
+## Follow-up from actual device screenshots (3 November 2026)
+
+- Primary action color is exactly `#ED8840`. Purple-selected filter chips are replaced with subdued orange/dark selection.
+- **Scansiona** uses the folder-open icon (local media discovery); Drive uses a thin, icon+label **Sincronizza** action, without a tall pill button.
+- Playlist name/track count, **Trova file** and **Esporta** share the same line; verify long names still ellipsize and both actions are tappable on narrow displays.
+- A custom vertically stacked conflict dialog replaces the overlapping Material 3 AlertDialog action footer. Verify each choice and **Più tardi** are independently tappable with long/multiple cloud versions.
+- Full player: drag the seek thumb and confirm the target timestamp stays visible **while dragging** and jumps to that exact point after release.
+- Media3 controls: shuffle on/off, repeat-one on/off; verify playback sequence changes and current state survives opening/closing the app UI while the service is active.
+- The album title appears below the artist in smaller text when present.
+- **Coda** opens a sheet showing the current Media3 session's tracks; tapping an item seeks to that item. Under shuffle, the sheet explicitly says it lists the original order (the upcoming random order is not falsely predicted).
+
+Keep previous Drive metadata-only, offline local-first and JSON v1 QA unchanged. Android compile/test is not physical UI or playback acceptance; record real-device observations separately.

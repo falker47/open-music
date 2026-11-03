@@ -122,7 +122,13 @@ private fun OpenMusicApp() {
     var exportPending by remember { mutableStateOf<PortablePlaylist?>(null) }
     var nowTitle by remember { mutableStateOf("") }
     var nowArtist by remember { mutableStateOf("") }
+    var nowAlbum by remember { mutableStateOf("") }
     var playing by remember { mutableStateOf(false) }
+    var shuffleEnabled by remember { mutableStateOf(false) }
+    var repeatOneEnabled by remember { mutableStateOf(false) }
+    var queueEntries by remember { mutableStateOf(emptyList<MusicQueueEntry>()) }
+    var currentQueueIndex by remember { mutableIntStateOf(-1) }
+    var showQueue by remember { mutableStateOf(false) }
     var position by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
     var currentUri by remember { mutableStateOf<Uri?>(null) }
@@ -673,8 +679,23 @@ private fun OpenMusicApp() {
                 val metadata = active.mediaMetadata
                 nowTitle = metadata.title?.toString().orEmpty()
                 nowArtist = metadata.artist?.toString().orEmpty()
+                nowAlbum = metadata.albumTitle?.toString().orEmpty()
                 currentUri = active.currentMediaItem?.localConfiguration?.uri
                 playing = active.isPlaying
+                shuffleEnabled = active.shuffleModeEnabled
+                repeatOneEnabled = active.repeatMode == Player.REPEAT_MODE_ONE
+                currentQueueIndex = if (active.mediaItemCount > 0)
+                    active.currentMediaItemIndex else -1
+                queueEntries = (0 until active.mediaItemCount).map { index ->
+                    val item = active.getMediaItemAt(index)
+                    MusicQueueEntry(
+                        index = index,
+                        title = item.mediaMetadata.title?.toString()
+                            ?.takeIf { it.isNotBlank() } ?: ("Brano " + (index + 1)),
+                        artist = item.mediaMetadata.artist?.toString().orEmpty(),
+                        uri = item.localConfiguration?.uri?.toString(),
+                    )
+                }
                 // Reflect seek/skip and Activity reconnection immediately, rather than
                 // leaving the progress bar on its prior track until the 750 ms tick.
                 position = active.currentPosition.coerceAtLeast(0L)
@@ -832,7 +853,28 @@ private fun OpenMusicApp() {
         )
     }
 
-    BackHandler(enabled = showNowPlaying) { showNowPlaying = false }
+    BackHandler(enabled = showNowPlaying && !showQueue) { showNowPlaying = false }
+    if (showQueue && showNowPlaying) {
+        MusicQueueSheet(
+            entries = queueEntries,
+            currentIndex = currentQueueIndex,
+            shuffleEnabled = shuffleEnabled,
+            cache = artworkCache,
+            onDismiss = { showQueue = false },
+            onSelect = { index ->
+                val active = player
+                val selectedEntry = queueEntries.getOrNull(index)
+                if (active != null && selectedEntry != null &&
+                    PlaybackUiLogic.canSelectQueue(index, active.mediaItemCount) &&
+                    active.getMediaItemAt(index).localConfiguration?.uri?.toString() ==
+                        selectedEntry.uri
+                ) {
+                    active.seekTo(index, 0L)
+                    showQueue = false
+                }
+            },
+        )
+    }
     val musicCount = remember(audioFiles, manualKinds) {
         audioFiles.count { AudioClassification.isMusic(it.isMusic, it.stamp(), manualKinds) }
     }
@@ -889,16 +931,31 @@ private fun OpenMusicApp() {
         if (showNowPlaying && nowTitle.isNotEmpty()) {
             MusicNowPlaying(
                 modifier = Modifier.fillMaxSize().padding(insets),
-                title = nowTitle, artist = nowArtist, uri = currentUri?.toString(),
+                title = nowTitle, artist = nowArtist, album = nowAlbum,
+                uri = currentUri?.toString(),
                 cache = artworkCache, playing = playing,
                 positionMs = position, durationMs = duration,
-                onClose = { showNowPlaying = false },
+                shuffleEnabled = shuffleEnabled, repeatOneEnabled = repeatOneEnabled,
+                queueSize = queueEntries.size,
+                onClose = { showQueue = false; showNowPlaying = false },
                 onSeek = { millis -> player?.seekTo(millis) },
                 onPrevious = {
                     player?.let { if (it.hasPreviousMediaItem()) it.seekToPreviousMediaItem() }
                 },
                 onPlayPause = { player?.let { if (it.isPlaying) it.pause() else it.play() } },
                 onNext = { player?.let { if (it.hasNextMediaItem()) it.seekToNextMediaItem() } },
+                onToggleShuffle = {
+                    player?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled }
+                },
+                onToggleRepeatOne = {
+                    player?.let { active ->
+                        val enabled = PlaybackUiLogic.toggleRepeatOne(
+                            active.repeatMode == Player.REPEAT_MODE_ONE)
+                        active.repeatMode = if (enabled)
+                            Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+                    }
+                },
+                onOpenQueue = { showQueue = true },
             )
         } else {
             Column(
@@ -922,10 +979,18 @@ private fun OpenMusicApp() {
                         FilterChip(
                             selected = onlyMusic, onClick = { onlyMusic = true },
                             label = { Text("Musica (" + musicCount + ")") },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MusicPalette.elevated,
+                                selectedLabelColor = MusicPalette.primary,
+                            ),
                         )
                         FilterChip(
                             selected = !onlyMusic, onClick = { onlyMusic = false },
                             label = { Text("Altri audio (" + (audioFiles.size - musicCount) + ")") },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MusicPalette.elevated,
+                                selectedLabelColor = MusicPalette.primary,
+                            ),
                         )
                     }
                     OutlinedTextField(
@@ -1026,7 +1091,7 @@ private fun OpenMusicApp() {
                                 ),
                             ) {
                                 Column(Modifier.padding(
-                                    start = 14.dp, end = 8.dp, top = 4.dp, bottom = 12.dp,
+                                    start = 12.dp, end = 6.dp, top = 2.dp, bottom = 8.dp,
                                 )) {
                                     Row(
                                         Modifier.fillMaxWidth(),
@@ -1045,17 +1110,20 @@ private fun OpenMusicApp() {
                                             modifier = Modifier.weight(1f),
                                             maxLines = 1,
                                         )
-                                        FilledTonalButton(
+                                        TextButton(
                                             onClick = { requestDriveAccess() },
                                             enabled = busy.isEmpty() && localLoaded,
                                             modifier = Modifier.heightIn(min = 48.dp),
-                                            contentPadding = PaddingValues(horizontal = 12.dp),
-                                            colors = ButtonDefaults.filledTonalButtonColors(
-                                                containerColor = MusicPalette.elevated,
-                                                contentColor = MusicPalette.primary,
-                                            ),
+                                            contentPadding = PaddingValues(horizontal = 3.dp),
                                         ) {
-                                            Text(if (cloudLinked) "Sincronizza" else "Collega")
+                                            Icon(
+                                                androidx.compose.material.icons.Icons.Rounded.Sync,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(19.dp),
+                                            )
+                                            Spacer(Modifier.width(4.dp))
+                                            Text(if (cloudLinked) "Sincronizza" else "Collega",
+                                                style = MaterialTheme.typography.labelLarge)
                                         }
                                         if (cloudLinked) {
                                             Box {
@@ -1085,7 +1153,7 @@ private fun OpenMusicApp() {
                                     }
                                     Text(
                                         driveStatus,
-                                        modifier = Modifier.padding(start = 28.dp),
+                                        modifier = Modifier.padding(start = 27.dp),
                                         color = if (cloudSyncError != null ||
                                             localSyncStatus.missingCount > 0)
                                             MusicPalette.warning else MusicPalette.muted,
@@ -1109,6 +1177,10 @@ private fun OpenMusicApp() {
                                             selected = list.playlistId == selectedId,
                                             onClick = { selectedId = list.playlistId },
                                             label = { Text(list.name + " · " + list.tracks.size) },
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                selectedContainerColor = MusicPalette.elevated,
+                                                selectedLabelColor = MusicPalette.primary,
+                                            ),
                                         )
                                     }
                                 }
@@ -1149,7 +1221,7 @@ private fun OpenMusicApp() {
                                 )
                             }
                             if (latestAnalysis.isNotEmpty()) item {
-                                Text(latestAnalysis, color = Muted, maxLines = 2,
+                                Text(latestAnalysis, color = Muted, maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     style = MaterialTheme.typography.labelSmall)
                             }
