@@ -12,6 +12,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -26,6 +27,9 @@ import androidx.compose.material.icons.rounded.FileUpload
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.ArrowDownward
+import androidx.compose.material.icons.rounded.DragIndicator
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.Shuffle
@@ -46,6 +50,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.consume
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
@@ -64,11 +71,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.openmusic.core.MatchStatus
 import app.openmusic.core.PlaybackUiLogic
+import app.openmusic.core.PlaybackQueuePlan
 import app.openmusic.core.PlaylistVerification
 import app.openmusic.core.VerificationDisplay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.max
+import kotlin.math.abs
 
 /**
  * Visual system for the Android local-first client. No playback, playlist or cloud state
@@ -212,6 +221,7 @@ internal fun MusicArt(
 @Composable
 internal fun MusicHeader(
     count: Int, total: Int, enabled: Boolean, onScan: () -> Unit,
+    onQueue: () -> Unit,
 ) {
     Row(
         Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 14.dp),
@@ -225,6 +235,9 @@ internal fun MusicHeader(
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("$count di $total file audio", style = MaterialTheme.typography.bodySmall,
                 color = MusicPalette.muted)
+        }
+        IconButton(onClick = onQueue, modifier = Modifier.size(48.dp)) {
+            Icon(Icons.Rounded.QueueMusic, contentDescription = "Apri la coda")
         }
         TextButton(
             onClick = onScan,
@@ -343,7 +356,7 @@ internal fun MusicEmptyState(
 @Composable
 internal fun MusicTrackRow(
     file: AudioFile, cache: LocalArtworkCache,
-    onPlay: () -> Unit, onAdd: () -> Unit,
+    onPlay: () -> Unit, onAdd: () -> Unit, onQueue: () -> Unit,
     inMusic: Boolean, onToggleMusic: () -> Unit,
 ) {
     Row(
@@ -385,6 +398,11 @@ internal fun MusicTrackRow(
                 tint = if (inMusic) MusicPalette.muted else MusicPalette.primary,
                 modifier = Modifier.size(23.dp),
             )
+        }
+        IconButton(onClick = onQueue, modifier = Modifier.size(44.dp)) {
+            Icon(Icons.Rounded.QueueMusic,
+                contentDescription = "Aggiungi " + file.title + " alla coda",
+                tint = MusicPalette.muted, modifier = Modifier.size(21.dp))
         }
         FilledTonalIconButton(
             onClick = onAdd, modifier = Modifier.size(48.dp),
@@ -486,7 +504,7 @@ internal fun MusicPlaylistTrackRow(
     title: String, artist: String?, durationMs: Long?, status: MatchStatus?,
     analyzing: Boolean, verificationComplete: Boolean,
     playable: AudioFile?, cache: LocalArtworkCache,
-    onPlay: () -> Unit, onRemove: () -> Unit,
+    onPlay: () -> Unit, onRemove: () -> Unit, onQueue: () -> Unit,
 ) {
     val accessible = playable != null
     Row(
@@ -530,6 +548,13 @@ internal fun MusicPlaylistTrackRow(
                     VerificationDisplay.MISSING -> Text("Mancante",
                         color = MusicPalette.warning, style = MaterialTheme.typography.labelSmall)
                 }
+            }
+        }
+        if (accessible) {
+            IconButton(onClick = onQueue, modifier = Modifier.size(44.dp)) {
+                Icon(Icons.Rounded.QueueMusic,
+                    contentDescription = "Aggiungi " + title + " alla coda",
+                    tint = MusicPalette.muted, modifier = Modifier.size(21.dp))
             }
         }
         IconButton(onClick = onRemove, modifier = Modifier.size(48.dp)) {
@@ -653,13 +678,7 @@ internal fun MusicNowPlaying(
     onPlayPause: () -> Unit, onNext: () -> Unit,
     onToggleShuffle: () -> Unit, onToggleRepeatOne: () -> Unit, onOpenQueue: () -> Unit,
 ) {
-    BoxWithConstraints(
-        modifier.background(
-            Brush.verticalGradient(
-                listOf(Color(0xFF29231F), MusicPalette.background, MusicPalette.background),
-            ),
-        ),
-    ) {
+    BoxWithConstraints(modifier.background(MusicPalette.background)) {
         val artSize: Dp = (maxWidth - 48.dp).coerceAtMost(maxHeight * 0.39f)
             .coerceAtMost(350.dp).coerceAtLeast(160.dp)
         Column(
@@ -696,7 +715,7 @@ internal fun MusicNowPlaying(
             )
             Spacer(Modifier.height(20.dp))
             Column(Modifier.fillMaxWidth()) {
-                Text(title, style = MaterialTheme.typography.headlineMedium,
+                Text(title, style = MaterialTheme.typography.headlineSmall,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(4.dp))
                 Text(artist.ifBlank { "Artista sconosciuto" },
@@ -722,11 +741,11 @@ internal fun MusicNowPlaying(
                 Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = onToggleShuffle, modifier = Modifier.size(48.dp)) {
-                    Icon(Icons.Rounded.Shuffle,
-                        contentDescription = if (shuffleEnabled)
-                            "Disattiva riproduzione casuale" else "Attiva riproduzione casuale",
-                        tint = if (shuffleEnabled) MusicPalette.primary else MusicPalette.muted,
+                IconButton(onClick = onToggleRepeatOne, modifier = Modifier.size(48.dp)) {
+                    Icon(if (repeatOneEnabled) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
+                        contentDescription = if (repeatOneEnabled)
+                            "Disattiva ripetizione brano" else "Ripeti questa canzone",
+                        tint = if (repeatOneEnabled) MusicPalette.primary else MusicPalette.muted,
                         modifier = Modifier.size(24.dp))
                 }
                 IconButton(onClick = onPrevious, modifier = Modifier.size(52.dp)) {
@@ -749,11 +768,11 @@ internal fun MusicNowPlaying(
                     Icon(Icons.Rounded.SkipNext, contentDescription = "Brano successivo",
                         tint = MusicPalette.text, modifier = Modifier.size(31.dp))
                 }
-                IconButton(onClick = onToggleRepeatOne, modifier = Modifier.size(48.dp)) {
-                    Icon(if (repeatOneEnabled) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
-                        contentDescription = if (repeatOneEnabled)
-                            "Disattiva ripetizione brano" else "Ripeti questa canzone",
-                        tint = if (repeatOneEnabled) MusicPalette.primary else MusicPalette.muted,
+                IconButton(onClick = onToggleShuffle, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Rounded.Shuffle,
+                        contentDescription = if (shuffleEnabled)
+                            "Disattiva riproduzione casuale" else "Attiva riproduzione casuale",
+                        tint = if (shuffleEnabled) MusicPalette.primary else MusicPalette.muted,
                         modifier = Modifier.size(24.dp))
                 }
             }
@@ -762,68 +781,166 @@ internal fun MusicNowPlaying(
     }
 }
 
-/** Snapshot of the Media3 session's current queue; never uploaded or persisted. */
+/** The physical Media3 timeline is the playback plan; entries never leave the device. */
 internal data class MusicQueueEntry(
-    val index: Int, val title: String, val artist: String, val uri: String?,
+    val index: Int,
+    val mediaId: String,
+    val title: String,
+    val artist: String,
+    val uri: String?,
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun MusicQueueSheet(
-    entries: List<MusicQueueEntry>, currentIndex: Int, shuffleEnabled: Boolean,
-    cache: LocalArtworkCache, onSelect: (Int) -> Unit, onDismiss: () -> Unit,
+    entries: List<MusicQueueEntry>, currentIndex: Int, queueMode: String,
+    repeatOneEnabled: Boolean, cache: LocalArtworkCache,
+    onSelect: (Int) -> Unit, onDismiss: () -> Unit,
+    onMove: (Int, Int) -> Unit, onRemove: (Int) -> Unit,
+    onAdd: () -> Unit,
 ) {
+    val upcoming = PlaybackQueuePlan.visible(entries, currentIndex)
+    val rowStepPx = with(LocalDensity.current) { 64.dp.toPx() }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = MusicPalette.surface,
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
             Row(
-                Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Coda di riproduzione", style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.weight(1f))
+                Column(Modifier.weight(1f)) {
+                    Text("Coda", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        when (queueMode) {
+                            PlaybackQueueCommands.SHUFFLE -> "Casuale · ordine effettivo"
+                            PlaybackQueueCommands.PLAYLIST -> "Dalla playlist"
+                            PlaybackQueueCommands.CUSTOM -> "Personalizzata"
+                            else -> "Dalla libreria"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MusicPalette.muted,
+                    )
+                }
+                TextButton(onClick = onAdd, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Icon(Icons.Rounded.Add, contentDescription = null,
+                        modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(3.dp))
+                    Text("Aggiungi")
+                }
                 IconButton(onClick = onDismiss) {
                     Icon(Icons.Rounded.Close, contentDescription = "Chiudi coda")
                 }
             }
-            if (shuffleEnabled) {
-                Text("Ordine casuale attivo · elenco nell'ordine originale",
-                    style = MaterialTheme.typography.bodySmall, color = MusicPalette.muted)
-            }
-            if (entries.isEmpty()) {
-                Text("Nessun brano in coda", modifier = Modifier.padding(vertical = 20.dp),
+            if (repeatOneEnabled && upcoming.isNotEmpty()) {
+                Text("Ripeti brano attivo · i prossimi restano in attesa",
+                    modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
+                    style = MaterialTheme.typography.bodySmall,
                     color = MusicPalette.muted)
+            }
+            if (upcoming.isEmpty()) {
+                Text("Coda vuota · aggiungi brani dalla libreria o dalle playlist",
+                    modifier = Modifier.padding(vertical = 22.dp),
+                    style = MaterialTheme.typography.bodyMedium, color = MusicPalette.muted)
             } else {
                 LazyColumn(
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 460.dp),
-                    contentPadding = PaddingValues(bottom = 22.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp),
+                    contentPadding = PaddingValues(bottom = 24.dp),
                 ) {
-                    items(entries.size) { position ->
-                        val item = entries[position]
-                        val selected = item.index == currentIndex
+                    items(upcoming.size) { position ->
+                        val item = upcoming[position]
+                        val current = item.index == currentIndex
+                        val canUp = PlaybackQueuePlan.canMoveUpcoming(
+                            item.index, item.index - 1, currentIndex, entries.size)
+                        val canDown = PlaybackQueuePlan.canMoveUpcoming(
+                            item.index, item.index + 1, currentIndex, entries.size)
+                        val drag = if (current) Modifier else Modifier.pointerInput(
+                            item.mediaId, currentIndex, entries.size,
+                        ) {
+                            var index = item.index
+                            var deltaY = 0f
+                            detectDragGesturesAfterLongPress(
+                                onDragEnd = { deltaY = 0f },
+                                onDragCancel = { deltaY = 0f },
+                                onDrag = { change, movement ->
+                                    change.consume()
+                                    deltaY += movement.y
+                                    if (abs(deltaY) >= rowStepPx) {
+                                        val target = index + if (deltaY > 0f) 1 else -1
+                                        if (PlaybackQueuePlan.canMoveUpcoming(
+                                                index, target, currentIndex, entries.size)) {
+                                            onMove(index, target)
+                                            index = target
+                                        }
+                                        deltaY = 0f
+                                    }
+                                },
+                            )
+                        }
                         Row(
                             Modifier.fillMaxWidth().heightIn(min = 64.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(if (selected) MusicPalette.elevated else Color.Transparent)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (current) MusicPalette.elevated
+                                    else Color.Transparent)
+                                .then(drag)
                                 .clickable { onSelect(item.index) }
-                                .padding(horizontal = 8.dp),
+                                .padding(horizontal = 6.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             MusicArt(item.uri, cache, Modifier.size(44.dp), quality = 128)
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
-                                Text(item.title, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                Text(
+                                    item.title, maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                     style = MaterialTheme.typography.titleMedium,
-                                    color = if (selected) MusicPalette.primary else MusicPalette.text)
-                                Text(item.artist.ifBlank { "Artista sconosciuto" },
+                                    color = if (current) MusicPalette.primary
+                                        else MusicPalette.text,
+                                )
+                                Text(
+                                    item.artist.ifBlank { "Artista sconosciuto" },
                                     maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                    style = MaterialTheme.typography.bodySmall, color = MusicPalette.muted)
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MusicPalette.muted,
+                                )
+                                if (position == 1) Text("Prossimo",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MusicPalette.primary)
                             }
-                            if (selected) {
+                            if (current) {
                                 Icon(Icons.Rounded.PlayArrow,
                                     contentDescription = "Brano corrente",
                                     tint = MusicPalette.primary)
+                            } else {
+                                // Accessible alternatives to drag-and-drop. These also make
+                                // ordering possible with a screen reader or keyboard.
+                                IconButton(
+                                    onClick = { onMove(item.index, item.index - 1) },
+                                    enabled = canUp,
+                                    modifier = Modifier.size(36.dp),
+                                ) {
+                                    Icon(Icons.Rounded.ArrowUpward,
+                                        contentDescription = "Sposta sopra " + item.title,
+                                        modifier = Modifier.size(18.dp))
+                                }
+                                IconButton(
+                                    onClick = { onMove(item.index, item.index + 1) },
+                                    enabled = canDown,
+                                    modifier = Modifier.size(36.dp),
+                                ) {
+                                    Icon(Icons.Rounded.ArrowDownward,
+                                        contentDescription = "Sposta sotto " + item.title,
+                                        modifier = Modifier.size(18.dp))
+                                }
+                                IconButton(
+                                    onClick = { onRemove(item.index) },
+                                    modifier = Modifier.size(40.dp),
+                                ) {
+                                    Icon(Icons.Rounded.DeleteOutline,
+                                        contentDescription = "Rimuovi dalla coda " + item.title,
+                                        modifier = Modifier.size(20.dp))
+                                }
                             }
                         }
                     }
