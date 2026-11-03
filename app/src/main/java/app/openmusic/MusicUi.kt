@@ -747,6 +747,7 @@ internal fun MusicNowPlaying(
     onToggleShuffle: () -> Unit, onToggleRepeatOne: () -> Unit, onOpenQueue: () -> Unit,
 ) {
     BoxWithConstraints(modifier.background(MusicPalette.background)) {
+        val controlWidth: Dp = (maxWidth - 36.dp).coerceAtMost(340.dp)
         val artSize: Dp = (maxWidth - 44.dp).coerceAtMost(maxHeight * 0.34f)
             .coerceAtMost(340.dp).coerceAtLeast(152.dp)
         Column(
@@ -814,8 +815,7 @@ internal fun MusicNowPlaying(
                     // Top tier: Repeat / Queue / Shuffle. Lower tier: previous /
                     // Play / next. The outer controls rise to frame a shallow arc.
                     Box(
-                        Modifier.width((maxWidth - 36.dp).coerceAtMost(340.dp))
-                            .height(116.dp),
+                        Modifier.width(controlWidth).height(116.dp),
                     ) {
                         IconButton(
                             onClick = onToggleRepeatOne,
