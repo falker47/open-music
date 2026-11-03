@@ -1,6 +1,14 @@
 package app.openmusic
 
 import android.content.pm.ApplicationInfo
+import android.os.Bundle
+import app.openmusic.core.PlaybackQueuePlan
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
+import kotlin.random.Random
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
+import androidx.media3.session.SessionCommands
 import android.os.SystemClock
 import android.util.Log
 import androidx.media3.common.AudioAttributes
@@ -21,6 +29,55 @@ import androidx.media3.session.MediaSessionService
 class PlaybackService : MediaSessionService() {
     private var player: ExoPlayer? = null
     private var mediaSession: MediaSession? = null
+    // PlaybackService owns the only queue and its session-scoped mode.
+    private var mode = PlaybackQueueCommands.LIBRARY
+    private var beforeShuffleMode = PlaybackQueueCommands.LIBRARY
+    private var shuffleBaseline: List<String>? = null
+
+    private fun publishMode() {
+        mediaSession?.setSessionExtras(PlaybackQueueCommands.modeArgs(mode))
+    }
+
+    private fun orderedIds(player: ExoPlayer): List<String> =
+        (0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId }
+
+    /** Move future Media3 items in-place; current playback and position are untouched. */
+    private fun applyUpcomingOrder(player: ExoPlayer, order: List<String>) {
+        val current = player.currentMediaItemIndex
+        if (current !in 0 until player.mediaItemCount) return
+        for (destination in (current + 1) until player.mediaItemCount) {
+            val id = order.getOrNull(destination) ?: return
+            val from = (destination until player.mediaItemCount).firstOrNull {
+                player.getMediaItemAt(it).mediaId == id
+            } ?: return
+            if (from != destination) player.moveMediaItem(from, destination)
+        }
+    }
+
+    private fun toggleShufflePlan(player: ExoPlayer) {
+        if (player.currentMediaItemIndex !in 0 until player.mediaItemCount) return
+        // Native shuffle is intentionally off: the Media3 list itself is the
+        // effective planned order, visible to all connected controllers.
+        if (player.shuffleModeEnabled) player.shuffleModeEnabled = false
+        if (mode == PlaybackQueueCommands.SHUFFLE) {
+            val baseline = shuffleBaseline
+            if (baseline != null) {
+                val order = PlaybackQueuePlan.restoreUpcoming(
+                    orderedIds(player), player.currentMediaItemIndex, baseline)
+                applyUpcomingOrder(player, order)
+            }
+            shuffleBaseline = null
+            mode = beforeShuffleMode
+        } else {
+            beforeShuffleMode = mode
+            shuffleBaseline = orderedIds(player)
+            val order = PlaybackQueuePlan.shuffleUpcoming(
+                orderedIds(player), player.currentMediaItemIndex, Random.Default)
+            applyUpcomingOrder(player, order)
+            mode = PlaybackQueueCommands.SHUFFLE
+        }
+        publishMode()
+    }
 
     // QA-only instrumentation; never log track names, URIs, file paths or content.
     private fun qaTrace(message: String) {
@@ -45,6 +102,49 @@ class PlaybackService : MediaSessionService() {
         // The controller interaction trace separates command dispatch from
         // subsequent player buffering and playback transitions.
         val qaCallback = object : MediaSession.Callback {
+            override fun onConnectAsync(
+                session: MediaSession,
+                controller: MediaSession.ControllerInfo,
+            ): ListenableFuture<MediaSession.ConnectionResult> {
+                // Only Open Music can change queue policy, never arbitrary external controllers.
+                if (controller.packageName != packageName)
+                    return super.onConnectAsync(session, controller)
+                val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS
+                    .buildUpon()
+                    .add(PlaybackQueueCommands.command(PlaybackQueueCommands.SET_MODE))
+                    .add(PlaybackQueueCommands.command(PlaybackQueueCommands.TOGGLE_SHUFFLE))
+                    .build()
+                return Futures.immediateFuture(
+                    MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller)
+                        .setAvailableSessionCommands(commands).build())
+            }
+
+            override fun onCustomCommand(
+                session: MediaSession,
+                controller: MediaSession.ControllerInfo,
+                customCommand: SessionCommand,
+                args: Bundle,
+            ): ListenableFuture<SessionResult> {
+                if (controller.packageName == packageName) {
+                    when (customCommand.customAction) {
+                        PlaybackQueueCommands.SET_MODE -> {
+                            val requested = args.getString(PlaybackQueueCommands.MODE_KEY)
+                            if (requested in listOf(PlaybackQueueCommands.LIBRARY,
+                                    PlaybackQueueCommands.PLAYLIST,
+                                    PlaybackQueueCommands.CUSTOM)) {
+                                mode = requested!!
+                                beforeShuffleMode = mode
+                                shuffleBaseline = null
+                                servicePlayer.shuffleModeEnabled = false
+                                publishMode()
+                            }
+                        }
+                        PlaybackQueueCommands.TOGGLE_SHUFFLE ->
+                            toggleShufflePlan(servicePlayer)
+                    }
+                }
+                return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
             @androidx.annotation.OptIn(UnstableApi::class)
             override fun onPlayerInteractionFinished(
                 session: MediaSession,
@@ -99,6 +199,7 @@ class PlaybackService : MediaSessionService() {
         mediaSession = MediaSession.Builder(this, servicePlayer)
             .setCallback(qaCallback)
             .build()
+        publishMode()
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
