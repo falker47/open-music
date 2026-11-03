@@ -59,6 +59,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -812,7 +814,8 @@ internal fun MusicNowPlaying(
                     // Top tier: Repeat / Queue / Shuffle. Lower tier: previous /
                     // Play / next. The outer controls rise to frame a shallow arc.
                     Box(
-                        Modifier.fillMaxWidth().widthIn(max = 340.dp).height(112.dp),
+                        Modifier.width((maxWidth - 36.dp).coerceAtMost(340.dp))
+                            .height(112.dp),
                     ) {
                         IconButton(
                             onClick = onToggleRepeatOne,
@@ -905,6 +908,7 @@ internal fun MusicQueueSheet(
     val upcoming = PlaybackQueuePlan.visible(entries, currentIndex)
     val dragThresholdPx = with(LocalDensity.current) { 40.dp.toPx() }
     var draggingId by remember { mutableStateOf<String?>(null) }
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
     val latestMove by rememberUpdatedState(onMove)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -944,6 +948,12 @@ internal fun MusicQueueSheet(
                     style = MaterialTheme.typography.bodySmall,
                     color = MusicPalette.muted)
             }
+            if (upcoming.size > 1) {
+                Text("Tieni premuto un brano per trascinarlo",
+                    modifier = Modifier.padding(vertical = 4.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MusicPalette.muted)
+            }
             if (upcoming.isEmpty()) {
                 Text("Coda vuota · aggiungi brani dalla libreria o dalle playlist",
                     modifier = Modifier.padding(vertical = 22.dp),
@@ -970,9 +980,20 @@ internal fun MusicQueueSheet(
                             var index = item.index
                             var travelled = 0f
                             detectDragGesturesAfterLongPress(
-                                onDragStart = { draggingId = item.mediaId },
-                                onDragEnd = { draggingId = null; travelled = 0f },
-                                onDragCancel = { draggingId = null; travelled = 0f },
+                                onDragStart = {
+                                    draggingId = item.mediaId
+                                    dragOffsetY = 0f
+                                },
+                                onDragEnd = {
+                                    draggingId = null
+                                    dragOffsetY = 0f
+                                    travelled = 0f
+                                },
+                                onDragCancel = {
+                                    draggingId = null
+                                    dragOffsetY = 0f
+                                    travelled = 0f
+                                },
                                 onDrag = { change, movement ->
                                     change.consume()
                                     travelled += movement.y
@@ -990,11 +1011,17 @@ internal fun MusicQueueSheet(
                                         travelled -= if (travelled > 0f)
                                             dragThresholdPx else -dragThresholdPx
                                     }
+                                    dragOffsetY = travelled
                                 },
                             )
                         }
                         Row(
                             Modifier.fillMaxWidth().heightIn(min = 64.dp)
+                                .zIndex(if (draggingId == item.mediaId) 1f else 0f)
+                                .graphicsLayer {
+                                    translationY = if (draggingId == item.mediaId)
+                                        dragOffsetY else 0f
+                                }
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(if (current || draggingId == item.mediaId)
                                     MusicPalette.elevated else Color.Transparent)
