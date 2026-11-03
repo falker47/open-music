@@ -808,6 +808,56 @@ private fun OpenMusicApp() {
     }
 
 
+    if (showDeleteChooser) {
+        AlertDialog(
+            onDismissRequest = { showDeleteChooser = false },
+            title = { Text("Elimina una playlist") },
+            text = {
+                Column(Modifier.heightIn(max = 350.dp).verticalScroll(rememberScrollState())) {
+                    playlists.forEach { list ->
+                        TextButton(
+                            onClick = {
+                                showDeleteChooser = false
+                                deleteConfirmId = list.playlistId
+                            },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                        ) {
+                            Text(list.name + " · " + list.tracks.size + " brani",
+                                modifier = Modifier.weight(1f), maxLines = 1,
+                                overflow = TextOverflow.Ellipsis)
+                            Icon(Icons.Rounded.ChevronRight, contentDescription = null)
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showDeleteChooser = false }) { Text("Annulla") }
+            },
+        )
+    }
+    deleteConfirmId?.let { id ->
+        val target = playlists.firstOrNull { it.playlistId == id }
+        AlertDialog(
+            onDismissRequest = { deleteConfirmId = null },
+            title = { Text("Eliminare «" + (target?.name ?: "playlist") + "»?") },
+            text = {
+                Text("La playlist verrà eliminata dal telefono, non i file musicali. " +
+                    if (cloudLinked) "La copia Drive resterà finché non decidi cosa mantenerne alla sincronizzazione."
+                    else "L'operazione non elimina alcun brano dal dispositivo.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { deleteConfirmId = null; deletePlaylist(id) },
+                    enabled = target != null && busy.isEmpty(),
+                ) { Text("Elimina playlist", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteConfirmId = null }) { Text("Annulla") }
+            },
+        )
+    }
+
     if (createDialog) {
         AlertDialog(
             onDismissRequest = { createDialog = false },
@@ -934,23 +984,128 @@ private fun OpenMusicApp() {
     }
 
     BackHandler(enabled = showNowPlaying && !showQueue) { showNowPlaying = false }
-    if (showQueue && showNowPlaying) {
+    if (showQueuePicker) {
+        val candidatePlaylist = queuePickPlaylistId
+            ?: selectedId ?: playlists.firstOrNull()?.playlistId
+        val resolved = resolvedMatches[candidatePlaylist].orEmpty()
+        val candidates = if (queuePickSource == 0) audioFiles else resolved.mapNotNull {
+            it.localUri?.let(mediaByUri::get)
+        }
+        val candidatesFiltered = candidates.filter {
+            AudioSearch.matches(it.title, it.artist, queuePickSearch)
+        }
+        AlertDialog(
+            onDismissRequest = { showQueuePicker = false },
+            title = { Text("Aggiungi alla coda") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Row {
+                        FilterChip(
+                            selected = queuePickSource == 0,
+                            onClick = { queuePickSource = 0 },
+                            label = { Text("Libreria") },
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        FilterChip(
+                            selected = queuePickSource == 1,
+                            enabled = playlists.isNotEmpty(),
+                            onClick = { queuePickSource = 1 },
+                            label = { Text("Playlist") },
+                        )
+                    }
+                    if (queuePickSource == 1) {
+                        Row(Modifier.horizontalScroll(rememberScrollState())) {
+                            playlists.forEach { list ->
+                                FilterChip(
+                                    selected = list.playlistId == candidatePlaylist,
+                                    onClick = { queuePickPlaylistId = list.playlistId },
+                                    label = { Text(list.name, maxLines = 1) },
+                                    modifier = Modifier.padding(end = 6.dp),
+                                )
+                            }
+                        }
+                    }
+                    OutlinedTextField(
+                        value = queuePickSearch,
+                        onValueChange = { queuePickSearch = it },
+                        singleLine = true,
+                        label = { Text("Cerca brano") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (candidatesFiltered.isEmpty()) {
+                        Text("Nessun brano disponibile",
+                            style = MaterialTheme.typography.bodySmall, color = Muted)
+                    } else LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                        items(candidatesFiltered.size) { index ->
+                            val file = candidatesFiltered[index]
+                            Row(
+                                Modifier.fillMaxWidth().heightIn(min = 52.dp)
+                                    .clickable { appendToQueue(file) }
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(file.title, maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        style = MaterialTheme.typography.titleMedium)
+                                    Text(file.artist.orEmpty(), maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        color = Muted, style = MaterialTheme.typography.bodySmall)
+                                }
+                                Icon(Icons.Rounded.Add, contentDescription = "Inserisci nella coda")
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showQueuePicker = false }) { Text("Fine") }
+            },
+        )
+    }
+    if (showQueue) {
         MusicQueueSheet(
             entries = queueEntries,
             currentIndex = currentQueueIndex,
-            shuffleEnabled = shuffleEnabled,
+            queueMode = queueMode,
+            repeatOneEnabled = repeatOneEnabled,
             cache = artworkCache,
             onDismiss = { showQueue = false },
+            onAdd = { showQueuePicker = true },
             onSelect = { index ->
                 val active = player
                 val selectedEntry = queueEntries.getOrNull(index)
                 if (active != null && selectedEntry != null &&
                     PlaybackUiLogic.canSelectQueue(index, active.mediaItemCount) &&
-                    active.getMediaItemAt(index).localConfiguration?.uri?.toString() ==
-                        selectedEntry.uri
+                    active.getMediaItemAt(index).mediaId == selectedEntry.mediaId
                 ) {
                     active.seekTo(index, 0L)
-                    showQueue = false
+                }
+            },
+            onMove = { from, to ->
+                val active = player
+                if (active != null &&
+                    PlaybackQueuePlan.canMoveUpcoming(
+                        from, to, active.currentMediaItemIndex, active.mediaItemCount)
+                ) {
+                    active.moveMediaItem(from, to)
+                    active.sendCustomCommand(
+                        PlaybackQueueCommands.command(PlaybackQueueCommands.SET_MODE),
+                        PlaybackQueueCommands.modeArgs(PlaybackQueueCommands.CUSTOM),
+                    )
+                }
+            },
+            onRemove = { index ->
+                val active = player
+                if (active != null &&
+                    PlaybackQueuePlan.canEditUpcoming(
+                        index, active.currentMediaItemIndex, active.mediaItemCount)
+                ) {
+                    active.removeMediaItem(index)
+                    active.sendCustomCommand(
+                        PlaybackQueueCommands.command(PlaybackQueueCommands.SET_MODE),
+                        PlaybackQueueCommands.modeArgs(PlaybackQueueCommands.CUSTOM),
+                    )
                 }
             },
         )
@@ -1146,6 +1301,16 @@ private fun OpenMusicApp() {
                             ) {
                                 Text("Playlist", style = MaterialTheme.typography.titleLarge,
                                     modifier = Modifier.weight(1f))
+                                if (!PlaylistSelection.showSelector(playlists.size) &&
+                                    playlists.isNotEmpty()) {
+                                    IconButton(
+                                        onClick = { showDeleteChooser = true },
+                                        enabled = busy.isEmpty(),
+                                    ) {
+                                        Icon(Icons.Rounded.DeleteOutline,
+                                            contentDescription = "Elimina una playlist")
+                                    }
+                                }
                                 TextButton(onClick = { createDialog = true },
                                     enabled = busy.isEmpty(),
                                     modifier = Modifier.heightIn(min = 48.dp)) {
@@ -1254,19 +1419,32 @@ private fun OpenMusicApp() {
                         if (PlaylistSelection.showSelector(playlists.size)) {
                             item {
                                 Row(
-                                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    playlists.forEach { list ->
-                                        FilterChip(
-                                            selected = list.playlistId == selectedId,
-                                            onClick = { selectedId = list.playlistId },
-                                            label = { Text(list.name + " · " + list.tracks.size) },
-                                            colors = FilterChipDefaults.filterChipColors(
-                                                selectedContainerColor = MusicPalette.elevated,
-                                                selectedLabelColor = MusicPalette.primary,
-                                            ),
-                                        )
+                                    Row(
+                                        Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        playlists.forEach { list ->
+                                            FilterChip(
+                                                selected = list.playlistId == selectedId,
+                                                onClick = { selectedId = list.playlistId },
+                                                label = { Text(list.name + " · " + list.tracks.size) },
+                                                colors = FilterChipDefaults.filterChipColors(
+                                                    selectedContainerColor = MusicPalette.elevated,
+                                                    selectedLabelColor = MusicPalette.primary,
+                                                ),
+                                            )
+                                        }
+                                    }
+                                    IconButton(
+                                        onClick = { showDeleteChooser = true },
+                                        enabled = busy.isEmpty(),
+                                    ) {
+                                        Icon(Icons.Rounded.DeleteOutline,
+                                            contentDescription = "Elimina una playlist",
+                                            tint = MusicPalette.muted)
                                     }
                                 }
                             }
