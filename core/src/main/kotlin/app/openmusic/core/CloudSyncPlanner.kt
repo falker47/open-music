@@ -47,7 +47,7 @@ data class CloudRevision(
 
 data class CloudCheckpoint(val revisionId: String, val playlistDigest: String)
 
-enum class CloudSyncAction { NONE, UPLOAD, DOWNLOAD, ADOPT, CONFLICT }
+enum class CloudSyncAction { NONE, UPLOAD, DOWNLOAD, ADOPT, ADOPT_TOMBSTONE, CONFLICT }
 
 /** Separate forks are never silently merged or discarded. */
 data class CloudSyncDecision(
@@ -104,6 +104,7 @@ object CloudSyncPlanner {
         localDigest: String?,
         checkpoint: CloudCheckpoint?,
         revisions: List<CloudRevision>,
+        locallyDeleted: Boolean = false,
     ): CloudSyncDecision {
         if (revisions.any { it.playlistId != playlistId })
             return CloudSyncDecision(CloudSyncAction.CONFLICT, emptyList(), "Identità playlist incongruente")
@@ -112,9 +113,6 @@ object CloudSyncPlanner {
         if (heads.size > 1)
             return CloudSyncDecision(CloudSyncAction.CONFLICT, heads, "Modifiche concorrenti")
         val remote = heads.singleOrNull()
-        // Explicit deletion/tombstone is not applied automatically.
-        if (remote?.deleted == true)
-            return CloudSyncDecision(CloudSyncAction.CONFLICT, heads, "Playlist cancellata sul cloud")
         if (checkpoint != null) {
             val acknowledged = revisions.firstOrNull {
                 it.revisionId == checkpoint.revisionId
@@ -125,10 +123,26 @@ object CloudSyncPlanner {
             // document with the same ID but different digest must never be
             // treated as an unchanged version, even when the head matches.
             if (acknowledged.playlistDigest != checkpoint.playlistDigest ||
-                acknowledged.deleted
+                (acknowledged.deleted && !locallyDeleted)
             ) return CloudSyncDecision(
                 CloudSyncAction.CONFLICT, heads, "Checkpoint cloud non corrispondente",
             )
+        }
+        // A tombstone is an explicit, append-only revision; never resurrect a
+        // deleted playlist on a clean install, and never delete a present local copy.
+        if (remote?.deleted == true) {
+            return if (localDigest == null)
+                CloudSyncDecision(CloudSyncAction.ADOPT_TOMBSTONE, heads)
+            else CloudSyncDecision(CloudSyncAction.CONFLICT, heads,
+                "Eliminata su Drive; la copia sul telefono è ancora presente")
+        }
+        // A local deletion must survive the next sync. The user decides whether
+        // to restore the cloud snapshot or append a remote tombstone.
+        if (locallyDeleted) {
+            return if (remote == null && checkpoint == null)
+                CloudSyncDecision(CloudSyncAction.NONE, heads)
+            else CloudSyncDecision(CloudSyncAction.CONFLICT, heads,
+                "Eliminata sul telefono; la versione Drive esiste ancora")
         }
         if (checkpoint == null) {
             val action = when {

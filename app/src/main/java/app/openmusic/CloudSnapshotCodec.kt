@@ -59,6 +59,12 @@ internal object CloudSnapshotCodec {
             .toString()
     }
 
+    /** A deletion is revision metadata only: no audio or playlist snapshot is removed remotely. */
+    fun encodeDeleted(revision: CloudRevision): String {
+        require(revision.deleted) { "Revisione di eliminazione non valida" }
+        return JSONObject().put("schema", 1).put("revision", metadata(revision)).toString()
+    }
+
     fun decode(content: String, expected: CloudRevision): PortablePlaylist {
         require(content.toByteArray(Charsets.UTF_8).size <= 2_000_000) {
             "Playlist cloud troppo grande"
