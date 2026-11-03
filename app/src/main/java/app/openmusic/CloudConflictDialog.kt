@@ -46,6 +46,20 @@ internal fun CloudConflictDialog(
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(conflict.reason, style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (conflict.locallyDeleted) {
+                    Text("Eliminata sul telefono · nessuna copia locale da sovrascrivere",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary)
+                }
+                conflict.localPreview?.let { local ->
+                    Text("Telefono · " + local.trackCount + " brani" +
+                        if (local.updatedAt.isBlank()) "" else " · " + local.updatedAt.take(16),
+                        style = MaterialTheme.typography.bodyMedium)
+                }
+                Text("Date registrate dai dispositivi, non verificate. " +
+                    "La versione più recente non viene scelta automaticamente.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (conflict.remoteHeads.isNotEmpty()) {
                     Text("Versioni su Drive", style = MaterialTheme.typography.labelLarge)
                     conflict.remoteHeads.forEachIndexed { index, head ->
@@ -58,10 +72,43 @@ internal fun CloudConflictDialog(
                                 selected = selectedRemote == head.revisionId,
                                 onClick = { selectedRemote = head.revisionId },
                             )
-                            Text("Versione " + (index + 1) + " · " +
-                                head.revisionId.take(8),
-                                style = MaterialTheme.typography.bodyMedium,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Column(Modifier.weight(1f)) {
+                                val preview = conflict.remotePreviews[head.revisionId]
+                                Text(
+                                    (if (head.deleted) "Eliminata · " else "Drive · ") +
+                                        (preview?.name ?: ("Versione " + (index + 1))),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                )
+                                if (preview != null && !head.deleted) {
+                                    val local = conflict.localPreview
+                                    val deltas = if (local != null) {
+                                        val localIds = local.tracks.map { it.id }.toSet()
+                                        val remoteIds = preview.tracks.map { it.id }.toSet()
+                                        " · +" + remoteIds.count { it !in localIds } +
+                                            "/−" + localIds.count { it !in remoteIds }
+                                    } else ""
+                                    Text(
+                                        preview.trackCount.toString() + " brani" +
+                                            if (preview.updatedAt.isBlank()) deltas
+                                            else " · " + preview.updatedAt.take(16) + deltas,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    if (local != null) {
+                                        val localIds = local.tracks.map { it.id }.toSet()
+                                        val additions = preview.tracks.filter {
+                                            it.id !in localIds
+                                        }.map { it.name }
+                                        if (additions.isNotEmpty()) Text(
+                                            "Nuovi: " + additions.take(2).joinToString(", ") +
+                                                if (additions.size > 2) "…" else "",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    }
+                                }
+                            }
                         }
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -71,11 +118,21 @@ internal fun CloudConflictDialog(
                             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                         ) { Text("Usa playlist del telefono") }
                     }
+                    if (conflict.locallyDeleted) {
+                        OutlinedButton(
+                            onClick = { choose(CloudConflictChoice.KEEP_DELETED) },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                        ) { Text("Conferma eliminazione anche su Drive") }
+                    }
                     OutlinedButton(
                         onClick = { choose(CloudConflictChoice.USE_REMOTE) },
                         enabled = selectedRemote != null,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                    ) { Text("Usa Drive (sostituisce sul telefono)") }
+                    ) {
+                        Text(if (conflict.remoteHeads.any {
+                                it.revisionId == selectedRemote && it.deleted
+                            }) "Accetta eliminazione Drive" else "Ripristina versione Drive")
+                    }
                     if (conflict.hasLocal) {
                         Button(
                             onClick = { choose(CloudConflictChoice.DUPLICATE_LOCAL) },

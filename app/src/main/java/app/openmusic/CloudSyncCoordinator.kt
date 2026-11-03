@@ -14,12 +14,26 @@ internal data class CloudResolution(
     val observedHeads: Set<String>,
     val remoteRevisionId: String? = null,
 )
+internal data class CloudTrackPreview(val id: String, val name: String)
 internal data class CloudVersionPreview(
     val name: String,
     val trackCount: Int,
     val updatedAt: String,
     val deleted: Boolean = false,
-)
+    val tracks: List<CloudTrackPreview> = emptyList(),
+) {
+    companion object {
+        fun from(playlist: PortablePlaylist): CloudVersionPreview =
+            CloudVersionPreview(
+                playlist.name, playlist.tracks.size, playlist.updatedAt,
+                tracks = playlist.tracks.map { track ->
+                    CloudTrackPreview(track.entryId,
+                        track.identity.metadata.title ?:
+                            track.identity.filenameHint ?: "Brano senza titolo")
+                },
+            )
+    }
+}
 internal data class CloudConflict(
     val playlistId: String,
     val title: String,
@@ -132,8 +146,7 @@ internal class CloudSyncCoordinator(context: Context) {
                     else {
                         val snapshot = CloudSnapshotCodec.decode(
                             api.download(chosen.fileId), head)
-                        CloudVersionPreview(snapshot.name, snapshot.tracks.size,
-                            snapshot.updatedAt)
+                        CloudVersionPreview.from(snapshot)
                     }
                 }
                 conflicts.add(CloudConflict(
@@ -141,7 +154,7 @@ internal class CloudSyncCoordinator(context: Context) {
                         ?: "Playlist $id",
                     decision.reason.ifEmpty { "Versioni locali e cloud differenti" },
                     decision.heads, own != null, deletion != null,
-                    own?.let { CloudVersionPreview(it.name, it.tracks.size, it.updatedAt) },
+                    own?.let(CloudVersionPreview::from),
                     previews,
                 ))
                 continue
