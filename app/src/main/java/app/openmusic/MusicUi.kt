@@ -767,6 +767,7 @@ internal data class MusicQueueEntry(
     val index: Int, val title: String, val artist: String, val uri: String?,
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun MusicQueueSheet(
     entries: List<MusicQueueEntry>, currentIndex: Int, shuffleEnabled: Boolean,
