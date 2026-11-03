@@ -39,6 +39,9 @@ import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.RadioButtonUnchecked
+import androidx.compose.material.icons.rounded.FolderCopy
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlaylistPlay
@@ -76,6 +79,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.openmusic.core.MatchStatus
+import app.openmusic.core.AudioSearch
+import app.openmusic.core.PortablePlaylist
+import app.openmusic.core.PlaylistSelection
+import app.openmusic.core.PlaylistNavLayout
 import app.openmusic.core.PlaybackUiLogic
 import app.openmusic.core.PlaybackQueuePlan
 import app.openmusic.core.PlaylistVerification
@@ -225,35 +232,60 @@ internal fun MusicArt(
 }
 
 @Composable
+internal fun MusicBrandIdentity(modifier: Modifier = Modifier) {
+    Text(
+        "Open Music", modifier = modifier, color = MusicPalette.primary,
+        style = MaterialTheme.typography.headlineSmall,
+        maxLines = 1, overflow = TextOverflow.Ellipsis,
+    )
+}
+
+@Composable
 internal fun MusicHeader(
-    count: Int, total: Int, enabled: Boolean, onScan: () -> Unit,
-    onQueue: () -> Unit,
+    enabled: Boolean, onScan: () -> Unit, onQueue: () -> Unit,
 ) {
     Row(
         Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.weight(1f)) {
-            Text("OPEN MUSIC", color = MusicPalette.primary,
-                style = MaterialTheme.typography.labelSmall, letterSpacing = 1.7.sp)
-            Spacer(Modifier.height(2.dp))
-            Text("La tua musica", style = MaterialTheme.typography.headlineSmall,
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("$count di $total file audio", style = MaterialTheme.typography.bodySmall,
-                color = MusicPalette.muted)
-        }
+        MusicBrandIdentity(Modifier.weight(1f))
         IconButton(onClick = onQueue, modifier = Modifier.size(48.dp)) {
             Icon(Icons.Rounded.QueueMusic, contentDescription = "Apri la coda")
         }
         TextButton(
-            onClick = onScan,
-            enabled = enabled,
+            onClick = onScan, enabled = enabled,
             modifier = Modifier.heightIn(min = 48.dp),
             contentPadding = PaddingValues(horizontal = 8.dp),
         ) {
             Icon(Icons.Rounded.FolderOpen, contentDescription = null, modifier = Modifier.size(19.dp))
             Spacer(Modifier.width(5.dp))
             Text("Scansiona")
+        }
+    }
+}
+
+@Composable
+internal fun MusicPlaylistHeader(
+    enabled: Boolean, canDelete: Boolean,
+    onCreate: () -> Unit, onImport: () -> Unit, onDelete: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        MusicBrandIdentity(Modifier.weight(1f))
+        IconButton(onClick = onCreate, enabled = enabled, modifier = Modifier.size(44.dp)) {
+            Icon(Icons.Rounded.Add, contentDescription = "Nuova playlist",
+                tint = MusicPalette.primary)
+        }
+        IconButton(onClick = onImport, enabled = enabled, modifier = Modifier.size(44.dp)) {
+            Icon(Icons.Rounded.FileDownload, contentDescription = "Importa playlist",
+                tint = MusicPalette.primary)
+        }
+        IconButton(onClick = onDelete, enabled = enabled && canDelete,
+            modifier = Modifier.size(44.dp)) {
+            Icon(Icons.Rounded.DeleteOutline, contentDescription = "Elimina una playlist",
+                tint = MusicPalette.primary)
         }
     }
 }
@@ -329,9 +361,11 @@ internal fun MusicBusyIndicator(message: String, onCancel: (() -> Unit)? = null)
 internal fun MusicEmptyState(
     title: String, description: String, icon: ImageVector,
     buttonLabel: String? = null, onAction: (() -> Unit)? = null,
+    onCardClick: (() -> Unit)? = null,
 ) {
     Surface(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)
+            .then(if (onCardClick != null) Modifier.clickable(onClick = onCardClick) else Modifier),
         color = MusicPalette.surface, shape = RoundedCornerShape(18.dp),
         border = BorderStroke(1.dp, MusicPalette.border),
     ) {
@@ -405,6 +439,214 @@ internal fun MusicLibraryCategoryTabs(
     }
 }
 
+
+/** The same single/two-tab visual language as the Music / Altri audio switch. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun MusicPlaylistNavigation(
+    playlists: List<PortablePlaylist>,
+    selectedId: String?,
+    onSelect: (String) -> Unit,
+) {
+    val layout = PlaylistSelection.layout(playlists.size)
+    if (layout == PlaylistNavLayout.NONE) return
+    val currentId = PlaylistSelection.resolveId(playlists, selectedId)
+    val current = playlists.firstOrNull { it.playlistId == currentId } ?: return
+    var showChooser by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+            .background(MusicPalette.surface).padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        if (layout == PlaylistNavLayout.DOUBLE) {
+            playlists.forEach { playlist ->
+                MusicPlaylistTab(
+                    title = playlist.name, selected = playlist.playlistId == currentId,
+                    modifier = Modifier.weight(1f),
+                    onClick = { onSelect(playlist.playlistId) },
+                )
+            }
+        } else {
+            MusicPlaylistTab(
+                title = current.name, selected = true, modifier = Modifier.weight(1f),
+                onClick = { if (layout == PlaylistNavLayout.PICKER) showChooser = true },
+            )
+            if (layout == PlaylistNavLayout.PICKER) {
+                Surface(
+                    onClick = { showChooser = true },
+                    modifier = Modifier.weight(1f).height(44.dp),
+                    shape = RoundedCornerShape(11.dp),
+                    color = Color.Transparent,
+                ) {
+                    Row(
+                        Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        Icon(Icons.Rounded.FolderCopy, contentDescription = null,
+                            modifier = Modifier.size(20.dp), tint = MusicPalette.primary)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Tutte (" + playlists.size + ")",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MusicPalette.text, maxLines = 1)
+                    }
+                }
+            }
+        }
+    }
+    if (showChooser) {
+        ModalBottomSheet(
+            onDismissRequest = { showChooser = false; query = "" },
+            containerColor = MusicPalette.surface,
+        ) {
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = 18.dp)
+                    .padding(bottom = 24.dp),
+            ) {
+                Text("Scegli la playlist", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(12.dp))
+                if (playlists.size >= 10) {
+                    OutlinedTextField(
+                        value = query, onValueChange = { query = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true, placeholder = { Text("Cerca playlist") },
+                        leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+                val matches = playlists.filter { it.name.contains(query, ignoreCase = true) }
+                LazyColumn(Modifier.heightIn(max = 420.dp)) {
+                    items(matches, key = { it.playlistId }) { playlist ->
+                        Surface(
+                            onClick = {
+                                onSelect(playlist.playlistId)
+                                showChooser = false
+                                query = ""
+                            },
+                            color = if (playlist.playlistId == currentId)
+                                MusicPalette.elevated else Color.Transparent,
+                            shape = RoundedCornerShape(12.dp),
+                        ) {
+                            Row(
+                                Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                                    .padding(horizontal = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(playlist.name, modifier = Modifier.weight(1f),
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                if (playlist.playlistId == currentId)
+                                    Icon(Icons.Rounded.CheckCircle, contentDescription = "Selezionata",
+                                        tint = MusicPalette.primary)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MusicPlaylistTab(
+    title: String, selected: Boolean, modifier: Modifier, onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick, modifier = modifier.height(44.dp),
+        shape = RoundedCornerShape(11.dp),
+        color = if (selected) MusicPalette.elevated else Color.Transparent,
+    ) {
+        Row(Modifier.fillMaxSize().padding(horizontal = 8.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically) {
+            Text(title, color = if (selected) MusicPalette.text else MusicPalette.muted,
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+/** Minimal, searchable, multi-select view. Selection is managed by the caller across queries. */
+@Composable
+internal fun MusicPlaylistAddPicker(
+    playlistName: String, candidates: List<AudioFile>, selectedUris: Set<String>,
+    query: String, saving: Boolean, onQuery: (String) -> Unit,
+    onToggle: (String) -> Unit, onCancel: () -> Unit, onConfirm: () -> Unit,
+) {
+    val results = remember(candidates, query) {
+        candidates.filter { AudioSearch.matches(it.title, it.artist, query) }
+    }
+    Column(
+        Modifier.fillMaxSize().background(MusicPalette.background)
+            .padding(horizontal = 18.dp),
+    ) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 60.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onCancel, enabled = !saving) {
+                Icon(Icons.Rounded.ArrowBack, contentDescription = "Annulla aggiunta brani")
+            }
+            Text("Aggiungi a " + playlistName,
+                modifier = Modifier.weight(1f),
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.titleLarge)
+        }
+        OutlinedTextField(
+            value = query, onValueChange = onQuery,
+            modifier = Modifier.fillMaxWidth(), singleLine = true,
+            placeholder = { Text("Cerca titolo o artista") },
+            leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+            trailingIcon = {
+                if (query.isNotEmpty()) IconButton(onClick = { onQuery("") }) {
+                    Icon(Icons.Rounded.Close, contentDescription = "Cancella ricerca")
+                }
+            },
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(selectedUris.size.toString() + " selezionati",
+            color = MusicPalette.muted, style = MaterialTheme.typography.labelMedium)
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            if (results.isEmpty()) item {
+                Text(if (query.isNotBlank()) "Nessun risultato" else "Nessun brano musicale indicizzato",
+                    modifier = Modifier.padding(16.dp), color = MusicPalette.muted)
+            }
+            items(results, key = { it.uri }) { file ->
+                val checked = file.uri in selectedUris
+                Surface(
+                    onClick = { if (!saving) onToggle(file.uri) },
+                    color = if (checked) MusicPalette.elevated else MusicPalette.surface,
+                    shape = RoundedCornerShape(10.dp),
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 58.dp)
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(file.title, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.bodyMedium)
+                            Text(file.artist?.takeIf { it.isNotBlank() } ?: "Artista sconosciuto",
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                color = MusicPalette.muted,
+                                style = MaterialTheme.typography.bodySmall)
+                        }
+                        Icon(if (checked) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
+                            contentDescription = if (checked) "Selezionato" else "Non selezionato",
+                            tint = if (checked) MusicPalette.primary else MusicPalette.subtle)
+                    }
+                }
+            }
+        }
+        Button(
+            onClick = onConfirm, enabled = selectedUris.isNotEmpty() && !saving,
+            modifier = Modifier.fillMaxWidth().padding(bottom = 14.dp).heightIn(min = 48.dp),
+        ) { Text(if (saving) "Aggiunta in corso" else "Aggiungi (" + selectedUris.size + ")") }
+    }
+}
+
 @Composable
 internal fun MusicTrackRow(
     file: AudioFile, cache: LocalArtworkCache,
@@ -445,7 +687,7 @@ internal fun MusicTrackRow(
         // Separate song metadata from the compact group of three actions.
         Spacer(Modifier.width(8.dp))
         Row(
-            horizontalArrangement = Arrangement.spacedBy(1.dp),
+            horizontalArrangement = Arrangement.spacedBy(0.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(
@@ -484,7 +726,7 @@ internal fun MusicTrackRow(
                 Icon(Icons.Rounded.Add,
                     contentDescription = "Aggiungi " + file.title + " a una playlist",
                     tint = MusicPalette.primary,
-                    modifier = Modifier.offset(x = (-2).dp).size(25.dp))
+                    modifier = Modifier.size(25.dp))
             }
         }
     }
@@ -495,9 +737,10 @@ internal fun MusicPlaylistSummary(
     name: String, trackCount: Int, available: Int, busy: Boolean,
     analyzing: Boolean, needsVerification: Boolean, unreadableCount: Int,
     missingTitles: List<String>,
-    onRelink: () -> Unit, onExport: () -> Unit,
+    onRelink: () -> Unit, onExport: () -> Unit, onAddTracks: () -> Unit,
 ) {
     var showMissing by remember(name) { mutableStateOf(false) }
+    var showActions by remember(name) { mutableStateOf(false) }
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp), color = MusicPalette.surface,
@@ -521,27 +764,32 @@ internal fun MusicPlaylistSummary(
                         style = MaterialTheme.typography.bodySmall,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                TextButton(
-                    onClick = onRelink, enabled = !busy,
-                    modifier = Modifier.heightIn(min = 48.dp),
-                    contentPadding = PaddingValues(horizontal = 3.dp),
-                ) {
-                    Icon(Icons.Rounded.Link, contentDescription = null,
-                        modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(3.dp))
-                    Text("Trova file", maxLines = 1,
-                        style = MaterialTheme.typography.labelMedium)
+                IconButton(onClick = onAddTracks, enabled = !busy) {
+                    Icon(Icons.Rounded.Add, contentDescription = "Aggiungi brani alla playlist",
+                        tint = MusicPalette.primary)
                 }
-                TextButton(
-                    onClick = onExport, enabled = !busy,
-                    modifier = Modifier.heightIn(min = 48.dp),
-                    contentPadding = PaddingValues(horizontal = 3.dp),
-                ) {
-                    Icon(Icons.Rounded.FileUpload, contentDescription = null,
-                        modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(3.dp))
-                    Text("Esporta", maxLines = 1,
-                        style = MaterialTheme.typography.labelMedium)
+                Box {
+                    IconButton(onClick = { showActions = true }, enabled = !busy) {
+                        Icon(Icons.Rounded.MoreVert,
+                            contentDescription = "Opzioni della playlist")
+                    }
+                    DropdownMenu(
+                        expanded = showActions,
+                        onDismissRequest = { showActions = false },
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Trova file") },
+                            onClick = { showActions = false; onRelink() },
+                            enabled = !busy,
+                            leadingIcon = { Icon(Icons.Rounded.Link, contentDescription = null) },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Esporta") },
+                            onClick = { showActions = false; onExport() },
+                            enabled = !busy,
+                            leadingIcon = { Icon(Icons.Rounded.FileUpload, contentDescription = null) },
+                        )
+                    }
                 }
             }
             if (unreadableCount > 0 && !analyzing) {

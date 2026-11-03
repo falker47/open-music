@@ -101,9 +101,13 @@ private fun OpenMusicApp() {
     var onlyMusic by rememberSaveable { mutableStateOf(true) }
     var playlists by remember { mutableStateOf(emptyList<PortablePlaylist>()) }
     var deletedIds by remember { mutableStateOf(emptySet<String>()) }
-    var selectedId by remember { mutableStateOf<String?>(null) }
+    var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
     var tab by remember { mutableIntStateOf(0) }
     var search by remember { mutableStateOf("") }
+    var pickerPlaylistId by remember { mutableStateOf<String?>(null) }
+    var pickerQuery by remember { mutableStateOf("") }
+    var pickerSelectedUris by remember { mutableStateOf(emptySet<String>()) }
+    var pickerSaving by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf("") }
     var localLoaded by remember { mutableStateOf(false) }
     var cloudState by remember {
@@ -142,8 +146,9 @@ private fun OpenMusicApp() {
     var duration by remember { mutableLongStateOf(0L) }
     var currentUri by remember { mutableStateOf<Uri?>(null) }
     var showNowPlaying by rememberSaveable { mutableStateOf(false) }
-    val selected = playlists.firstOrNull { it.playlistId == selectedId }
-    val matches = resolvedMatches[selectedId].orEmpty()
+    val currentSelectedId = PlaylistSelection.resolveId(playlists, selectedId)
+    val selected = playlists.firstOrNull { it.playlistId == currentSelectedId }
+    val matches = resolvedMatches[currentSelectedId].orEmpty()
     val byEntryId = matches.associateBy { it.entryId }
     val mediaByUri = audioFiles.associateBy { it.uri }
 
@@ -516,6 +521,79 @@ private fun OpenMusicApp() {
         }
     }
 
+
+    fun openPicker(listId: String) {
+        if (busy.isNotEmpty() || !localLoaded) return
+        if (playlists.none { it.playlistId == listId }) return
+        pickerPlaylistId = listId
+        pickerQuery = ""
+        pickerSelectedUris = emptySet()
+    }
+
+    fun closePicker() {
+        if (pickerSaving) return
+        pickerPlaylistId = null
+        pickerQuery = ""
+        pickerSelectedUris = emptySet()
+    }
+
+    fun confirmPicker() {
+        val listId = pickerPlaylistId ?: return
+        if (pickerSaving || busy.isNotEmpty() || pickerSelectedUris.isEmpty()) return
+        val chosen = pickerSelectedUris
+        // Only use the indexed local music category; no external SAF or file pickers.
+        val songs = audioFiles.filter {
+            it.uri in chosen &&
+                AudioClassification.isMusic(it.isMusic, it.stamp(), manualKinds)
+        }
+        if (songs.isEmpty()) { notifyUser("Nessun brano musicale selezionato"); return }
+        pickerSaving = true
+        busy = "Verifica dei brani selezionati"
+        scope.launch {
+            try {
+                // Resolve every SHA-256 before any playlist write, so a failed read is atomic.
+                val verified = songs.map { file -> file to hashCache.sha256(file) }
+                hashCache.flush()
+                playlistWriteMutex.withLock {
+                    val current = playlists.firstOrNull { it.playlistId == listId }
+                        ?: throw IllegalStateException("Playlist non trovata")
+                    val entries = verified.map { (file, hash) ->
+                        PlaylistEntry(UUID.randomUUID().toString(), file.asCopy(hash).identity)
+                    }
+                    val result = PlaylistBulkAdd.add(current, entries, Instant.now().toString())
+                    val saved = result.inserted == 0 || persist(playlists.map {
+                        if (it.playlistId == listId) result.playlist else it
+                    })
+                    if (saved) {
+                        if (result.inserted > 0) {
+                            verified.forEach { (file, hash) ->
+                                localCopies = VerifiedCopies.upsert(localCopies, file.asCopy(hash))
+                            }
+                            refreshMatches(playlists, localCopies)
+                        }
+                        selectedId = listId
+                        tab = 1
+                        pickerPlaylistId = null
+                        pickerSelectedUris = emptySet()
+                        pickerQuery = ""
+                        notifyUser(
+                            if (result.inserted == 0) "Brani già presenti nella playlist"
+                            else result.inserted.toString() + " brani aggiunti a " + current.name +
+                                if (cloudLinked) " · sincronizza Drive" else ""
+                        )
+                    }
+                }
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (failure: Exception) {
+                notifyUser("Aggiunta non riuscita: " + (failure.localizedMessage ?: "errore"))
+            } finally {
+                pickerSaving = false
+                busy = ""
+            }
+        }
+    }
+
     fun requestAddToPlaylist(file: AudioFile) {
         if (busy.isNotEmpty()) return
         when (PlaylistRouting.decide(playlists)) {
@@ -695,7 +773,7 @@ private fun OpenMusicApp() {
             playlists = state.playlists
             deletedIds = state.deleted.map { it.playlistId }.toSet()
             manualKinds = withContext(Dispatchers.IO) { kindStorage.load() }
-            selectedId = playlists.firstOrNull()?.playlistId
+            selectedId = PlaylistSelection.resolveId(playlists, selectedId)
             localLoaded = true
         } catch (failure: Exception) {
             notifyUser("Archivio locale non leggibile: " + (failure.localizedMessage ?: "errore"))
@@ -994,6 +1072,7 @@ private fun OpenMusicApp() {
     }
 
     BackHandler(enabled = showNowPlaying && !showQueue) { showNowPlaying = false }
+    BackHandler(enabled = pickerPlaylistId != null && !pickerSaving) { closePicker() }
     if (showQueuePicker) {
         val candidatePlaylist = queuePickPlaylistId
             ?: selectedId ?: playlists.firstOrNull()?.playlistId
@@ -1123,6 +1202,9 @@ private fun OpenMusicApp() {
     val musicCount = remember(audioFiles, manualKinds) {
         audioFiles.count { AudioClassification.isMusic(it.isMusic, it.stamp(), manualKinds) }
     }
+    val musicCatalog = remember(audioFiles, manualKinds) {
+        audioFiles.filter { AudioClassification.isMusic(it.isMusic, it.stamp(), manualKinds) }
+    }
     val visibleAudio = remember(audioFiles, manualKinds, onlyMusic) {
         audioFiles.filter {
             AudioClassification.isMusic(it.isMusic, it.stamp(), manualKinds) == onlyMusic
@@ -1152,7 +1234,7 @@ private fun OpenMusicApp() {
         containerColor = MusicPalette.background,
         contentWindowInsets = WindowInsets.safeDrawing,
         bottomBar = {
-            if (!showNowPlaying) {
+            if (!showNowPlaying && pickerPlaylistId == null) {
                 Column(
                     Modifier.fillMaxWidth().background(MusicPalette.background)
                         .navigationBarsPadding(),
@@ -1176,7 +1258,18 @@ private fun OpenMusicApp() {
             }
         },
     ) { insets ->
-        if (showNowPlaying && nowTitle.isNotEmpty()) {
+        if (pickerPlaylistId != null) {
+            val target = playlists.firstOrNull { it.playlistId == pickerPlaylistId }
+            if (target != null) {
+                MusicPlaylistAddPicker(
+                    playlistName = target.name, candidates = musicCatalog,
+                    selectedUris = pickerSelectedUris, query = pickerQuery,
+                    saving = pickerSaving, onQuery = { pickerQuery = it },
+                    onToggle = { pickerSelectedUris = PlaylistBulkAdd.toggle(pickerSelectedUris, it) },
+                    onCancel = { closePicker() }, onConfirm = { confirmPicker() },
+                )
+            }
+        } else if (showNowPlaying && nowTitle.isNotEmpty()) {
             MusicNowPlaying(
                 modifier = Modifier.fillMaxSize().padding(insets),
                 title = nowTitle, artist = nowArtist, album = nowAlbum,
@@ -1213,11 +1306,14 @@ private fun OpenMusicApp() {
                 Modifier.fillMaxSize().padding(insets).padding(horizontal = 18.dp),
             ) {
                 if (tab == 0) MusicHeader(
-                    count = visibleAudio.size,
-                    total = audioFiles.size,
                     enabled = busy.isEmpty(),
                     onScan = { requestScan() },
                     onQueue = { showQueue = true },
+                ) else MusicPlaylistHeader(
+                    enabled = busy.isEmpty(), canDelete = playlists.isNotEmpty(),
+                    onCreate = { createDialog = true },
+                    onImport = { importer.launch(arrayOf("application/json", "text/plain")) },
+                    onDelete = { showDeleteChooser = true },
                 )
                 if (busy.isNotEmpty()) MusicBusyIndicator(
                     busy, onCancel = if (verifying) ({ analysisJob?.cancel() }) else null,
@@ -1293,45 +1389,6 @@ private fun OpenMusicApp() {
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         item {
-                            Row(
-                                Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 2.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text("Playlist", style = MaterialTheme.typography.titleLarge,
-                                    modifier = Modifier.weight(1f))
-                                TextButton(onClick = { createDialog = true },
-                                    enabled = busy.isEmpty(),
-                                    modifier = Modifier.heightIn(min = 48.dp)) {
-                                    Icon(androidx.compose.material.icons.Icons.Rounded.Add,
-                                        contentDescription = null, modifier = Modifier.size(20.dp))
-                                    Spacer(Modifier.width(3.dp))
-                                    Text("Nuova")
-                                }
-                                TextButton(
-                                    onClick = { importer.launch(arrayOf("application/json", "text/plain")) },
-                                    enabled = busy.isEmpty(),
-                                    modifier = Modifier.heightIn(min = 48.dp),
-                                ) {
-                                    Icon(androidx.compose.material.icons.Icons.Rounded.FileDownload,
-                                        contentDescription = null, modifier = Modifier.size(20.dp))
-                                    Spacer(Modifier.width(3.dp))
-                                    Text("Importa")
-                                }
-                                IconButton(
-                                    onClick = { showDeleteChooser = true },
-                                    enabled = busy.isEmpty() && playlists.isNotEmpty(),
-                                    modifier = Modifier.size(40.dp),
-                                ) {
-                                    Icon(
-                                        Icons.Rounded.DeleteOutline,
-                                        contentDescription = "Elimina una playlist",
-                                        tint = MusicPalette.primary,
-                                        modifier = Modifier.size(20.dp),
-                                    )
-                                }
-                            }
-                        }
-                        item {
                             Surface(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(16.dp),
@@ -1346,34 +1403,27 @@ private fun OpenMusicApp() {
                                     ),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Column(
-                                        modifier = Modifier.weight(1f),
-                                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                                    ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(
-                                                androidx.compose.material.icons.Icons.Rounded.Cloud,
-                                                contentDescription = null,
-                                                tint = MusicPalette.primary,
-                                                modifier = Modifier.size(20.dp),
-                                            )
-                                            Spacer(Modifier.width(8.dp))
-                                            Text(
-                                                "Google Drive",
-                                                style = MaterialTheme.typography.titleSmall,
-                                                modifier = Modifier.weight(1f),
-                                                maxLines = 1,
-                                            )
-                                        }
+                                    Icon(
+                                        androidx.compose.material.icons.Icons.Rounded.Cloud,
+                                        contentDescription = null,
+                                        tint = MusicPalette.primary,
+                                        modifier = Modifier.size(24.dp),
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Column(Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Text(
+                                            "Google Drive",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            maxLines = 1,
+                                        )
                                         Text(
                                             driveStatus,
-                                            modifier = Modifier.padding(start = 28.dp),
                                             color = if (cloudSyncError != null ||
                                                 localSyncStatus.missingCount > 0)
                                                 MusicPalette.warning else MusicPalette.muted,
                                             style = MaterialTheme.typography.bodySmall,
-                                            maxLines = 2,
-                                            overflow = TextOverflow.Ellipsis,
+                                            maxLines = 2, overflow = TextOverflow.Ellipsis,
                                         )
                                     }
                                     TextButton(
@@ -1419,26 +1469,12 @@ private fun OpenMusicApp() {
                                 }
                             }
                         }
-                        // A single playlist needs no selector: the detail is already visible.
-                        // With multiple playlists use one compact chooser and one detail panel.
-                        if (PlaylistSelection.showSelector(playlists.size)) {
+                        if (playlists.isNotEmpty()) {
                             item {
-                                Row(
-                                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    playlists.forEach { list ->
-                                        FilterChip(
-                                            selected = list.playlistId == selectedId,
-                                            onClick = { selectedId = list.playlistId },
-                                            label = { Text(list.name + " · " + list.tracks.size) },
-                                            colors = FilterChipDefaults.filterChipColors(
-                                                selectedContainerColor = MusicPalette.elevated,
-                                                selectedLabelColor = MusicPalette.primary,
-                                            ),
-                                        )
-                                    }
-                                }
+                                MusicPlaylistNavigation(
+                                    playlists = playlists, selectedId = currentSelectedId,
+                                    onSelect = { selectedId = it },
+                                )
                             }
                         }
                         if (selected == null) {
@@ -1467,6 +1503,7 @@ private fun OpenMusicApp() {
                                     unreadableCount = unreadableCount,
                                     missingTitles = missingTitles,
                                     onRelink = { relink() },
+                                    onAddTracks = { openPicker(selected.playlistId) },
                                     onExport = {
                                         exportPending = selected
                                         exporter.launch(
@@ -1484,8 +1521,10 @@ private fun OpenMusicApp() {
                                 item {
                                     MusicEmptyState(
                                         title = "Playlist vuota",
-                                        description = "Dalla Libreria tocca + accanto a un brano per aggiungerlo qui.",
+                                        description = "Tocca per scegliere più brani dalla tua musica.",
                                         icon = androidx.compose.material.icons.Icons.Rounded.MusicNote,
+                                        onCardClick = if (busy.isEmpty())
+                                            ({ openPicker(selected.playlistId) }) else null,
                                     )
                                 }
                             } else {
