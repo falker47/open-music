@@ -114,6 +114,12 @@ private fun OpenMusicApp() {
     var cloudConflicts by remember { mutableStateOf(emptyList<CloudConflict>()) }
     var showCloudDisconnect by remember { mutableStateOf(false) }
     var createDialog by remember { mutableStateOf(false) }
+    var showDeleteChooser by remember { mutableStateOf(false) }
+    var deleteConfirmId by remember { mutableStateOf<String?>(null) }
+    var showQueuePicker by remember { mutableStateOf(false) }
+    var queuePickSource by remember { mutableIntStateOf(0) }
+    var queuePickPlaylistId by remember { mutableStateOf<String?>(null) }
+    var queuePickSearch by remember { mutableStateOf("") }
     var pendingAdd by remember { mutableStateOf<AudioFile?>(null) }
     var pendingHash by remember { mutableStateOf<String?>(null) }
     var pendingHashError by remember { mutableStateOf<String?>(null) }
@@ -125,6 +131,7 @@ private fun OpenMusicApp() {
     var nowAlbum by remember { mutableStateOf("") }
     var playing by remember { mutableStateOf(false) }
     var shuffleEnabled by remember { mutableStateOf(false) }
+    var queueMode by remember { mutableStateOf(PlaybackQueueCommands.LIBRARY) }
     var repeatOneEnabled by remember { mutableStateOf(false) }
     var queueEntries by remember { mutableStateOf(emptyList<MusicQueueEntry>()) }
     var currentQueueIndex by remember { mutableIntStateOf(-1) }
@@ -339,8 +346,8 @@ private fun OpenMusicApp() {
                                     pending.pendingCount
                             result.uploaded == 0 && result.downloaded == 0 ->
                                 "Drive · nessuna modifica"
-                            else -> "Drive · " + result.uploaded + " salvate, " +
-                                result.downloaded + " ricevute"
+                            else -> "Drive · " + result.uploaded + " revisioni inviate, " +
+                                result.downloaded + " ricevute, " + result.deleted + " eliminate"
                         })
                     }
                 }
@@ -405,7 +412,10 @@ private fun OpenMusicApp() {
         else permissionLauncher.launch(MediaLibrary.permission())
     }
 
-    fun playQueue(queue: List<AudioFile>, index: Int) {
+    fun playQueue(
+        queue: List<AudioFile>, index: Int,
+        source: String = PlaybackQueueCommands.LIBRARY,
+    ) {
         if (queue.isEmpty() || index !in queue.indices) return
         val controller = player
         if (controller == null) {
@@ -414,6 +424,7 @@ private fun OpenMusicApp() {
         }
         val items = queue.map { file ->
             MediaItem.Builder()
+                .setMediaId(UUID.randomUUID().toString())
                 .setUri(Uri.parse(file.uri))
                 .setMediaMetadata(MediaMetadata.Builder()
                     .setTitle(file.title)
@@ -423,8 +434,40 @@ private fun OpenMusicApp() {
                 .build()
         }
         controller.setMediaItems(items, index, 0L)
+        controller.sendCustomCommand(
+            PlaybackQueueCommands.command(PlaybackQueueCommands.SET_MODE),
+            PlaybackQueueCommands.modeArgs(source),
+        )
         controller.prepare()
         controller.play()
+    }
+
+    fun appendToQueue(file: AudioFile) {
+        val controller = player ?: run {
+            notifyUser("Player in connessione")
+            return
+        }
+        val item = MediaItem.Builder()
+            .setMediaId(UUID.randomUUID().toString())
+            .setUri(Uri.parse(file.uri))
+            .setMediaMetadata(MediaMetadata.Builder()
+                .setTitle(file.title)
+                .setArtist(file.artist)
+                .setAlbumTitle(file.album)
+                .build())
+            .build()
+        if (controller.mediaItemCount == 0) {
+            controller.setMediaItem(item)
+            controller.prepare()
+            controller.play()
+        } else {
+            controller.addMediaItem(item)
+        }
+        controller.sendCustomCommand(
+            PlaybackQueueCommands.command(PlaybackQueueCommands.SET_MODE),
+            PlaybackQueueCommands.modeArgs(PlaybackQueueCommands.CUSTOM),
+        )
+        notifyUser("Aggiunto alla coda: " + file.title)
     }
 
     fun addToPlaylist(file: AudioFile, listId: String) {
@@ -608,11 +651,34 @@ private fun OpenMusicApp() {
         if (name.isBlank() || name.length > 160) { notifyUser("Nome playlist non valido"); return }
         val now = Instant.now().toString()
         val list = PortablePlaylist(UUID.randomUUID().toString(), name, now, now, emptyList())
-        persist(playlists + list)
-        selectedId = list.playlistId
+        if (persist(playlists + list)) selectedId = list.playlistId
         proposedName = ""
         createDialog = false
         tab = 1
+    }
+
+    fun deletePlaylist(id: String) {
+        if (busy.isNotEmpty() || !localLoaded) return
+        scope.launch {
+            playlistWriteMutex.withLock {
+                val victim = playlists.firstOrNull { it.playlistId == id }
+                    ?: return@withLock
+                try {
+                    val remaining = withContext(Dispatchers.IO) {
+                        storage.deletePlaylist(id).playlists
+                    }
+                    playlists = remaining
+                    if (selectedId == id) selectedId = remaining.firstOrNull()?.playlistId
+                    refreshMatches(remaining, localCopies)
+                    notifyUser("Eliminata «" + victim.name + "» · file audio intatti" +
+                        if (cloudLinked) " · alla prossima sincronizzazione decidi su Drive"
+                        else "")
+                } catch (failure: Exception) {
+                    notifyUser("Eliminazione non riuscita: " +
+                        (failure.localizedMessage ?: "errore"))
+                }
+            }
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -648,12 +714,23 @@ private fun OpenMusicApp() {
     // Connect asynchronously. Releasing the UI controller must not release service playback.
     DisposableEffect(context) {
         val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
-        val future = MediaController.Builder(context, token).buildAsync()
+        val future = MediaController.Builder(context, token)
+            .setListener(object : MediaController.Listener {
+                override fun onExtrasChanged(controller: MediaController, extras: Bundle) {
+                    queueMode = extras.getString(PlaybackQueueCommands.MODE_KEY)
+                        ?: PlaybackQueueCommands.LIBRARY
+                    shuffleEnabled = queueMode == PlaybackQueueCommands.SHUFFLE
+                }
+            }).buildAsync()
         var disposed = false
         future.addListener({
             if (!disposed) {
                 try {
                     player = future.get()
+                    queueMode = player?.sessionExtras
+                        ?.getString(PlaybackQueueCommands.MODE_KEY)
+                        ?: PlaybackQueueCommands.LIBRARY
+                    shuffleEnabled = queueMode == PlaybackQueueCommands.SHUFFLE
                 } catch (failure: Exception) {
                     scope.launch {
                         snackbar.showSnackbar("Player non disponibile: " +
@@ -682,7 +759,9 @@ private fun OpenMusicApp() {
                 nowAlbum = metadata.albumTitle?.toString().orEmpty()
                 currentUri = active.currentMediaItem?.localConfiguration?.uri
                 playing = active.isPlaying
-                shuffleEnabled = active.shuffleModeEnabled
+                queueMode = active.sessionExtras.getString(PlaybackQueueCommands.MODE_KEY)
+                    ?: PlaybackQueueCommands.LIBRARY
+                shuffleEnabled = queueMode == PlaybackQueueCommands.SHUFFLE
                 repeatOneEnabled = active.repeatMode == Player.REPEAT_MODE_ONE
                 currentQueueIndex = if (active.mediaItemCount > 0)
                     active.currentMediaItemIndex else -1
@@ -690,6 +769,7 @@ private fun OpenMusicApp() {
                     val item = active.getMediaItemAt(index)
                     MusicQueueEntry(
                         index = index,
+                        mediaId = item.mediaId,
                         title = item.mediaMetadata.title?.toString()
                             ?.takeIf { it.isNotBlank() } ?: ("Brano " + (index + 1)),
                         artist = item.mediaMetadata.artist?.toString().orEmpty(),
@@ -945,7 +1025,10 @@ private fun OpenMusicApp() {
                 onPlayPause = { player?.let { if (it.isPlaying) it.pause() else it.play() } },
                 onNext = { player?.let { if (it.hasNextMediaItem()) it.seekToNextMediaItem() } },
                 onToggleShuffle = {
-                    player?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled }
+                    player?.sendCustomCommand(
+                        PlaybackQueueCommands.command(PlaybackQueueCommands.TOGGLE_SHUFFLE),
+                        Bundle.EMPTY,
+                    )
                 },
                 onToggleRepeatOne = {
                     player?.let { active ->
@@ -966,6 +1049,7 @@ private fun OpenMusicApp() {
                     total = audioFiles.size,
                     enabled = busy.isEmpty(),
                     onScan = { requestScan() },
+                    onQueue = { showQueue = true },
                 )
                 if (busy.isNotEmpty()) MusicBusyIndicator(
                     busy, onCancel = if (verifying) ({ analysisJob?.cancel() }) else null,
@@ -1034,6 +1118,7 @@ private fun OpenMusicApp() {
                                     file = file, cache = artworkCache,
                                     onPlay = { playQueue(filtered, index) },
                                     onAdd = { requestAddToPlaylist(file) },
+                                    onQueue = { appendToQueue(file) },
                                     inMusic = AudioClassification.isMusic(
                                         file.isMusic, file.stamp(), manualKinds,
                                     ),
@@ -1253,8 +1338,12 @@ private fun OpenMusicApp() {
                                                     it.localUri?.let(mediaByUri::get)
                                                 }
                                                 val index = queue.indexOfFirst { it.uri == playable.uri }
-                                                if (index >= 0) playQueue(queue, index)
+                                                if (index >= 0) playQueue(
+                                                    queue, index, PlaybackQueueCommands.PLAYLIST)
                                             }
+                                        },
+                                        onQueue = {
+                                            if (playable != null) appendToQueue(playable)
                                         },
                                         onRemove = {
                                             if (busy.isEmpty()) scope.launch {
