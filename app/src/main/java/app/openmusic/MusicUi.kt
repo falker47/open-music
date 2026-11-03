@@ -815,7 +815,7 @@ internal fun MusicNowPlaying(
                     // Play / next. The outer controls rise to frame a shallow arc.
                     Box(
                         Modifier.width((maxWidth - 36.dp).coerceAtMost(340.dp))
-                            .height(112.dp),
+                            .height(116.dp),
                     ) {
                         IconButton(
                             onClick = onToggleRepeatOne,
