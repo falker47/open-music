@@ -45,7 +45,9 @@ data class CloudRevision(
     val deleted: Boolean = false,
 )
 
-data class CloudCheckpoint(val revisionId: String, val playlistDigest: String)
+data class CloudCheckpoint(
+    val revisionId: String, val playlistDigest: String, val deleted: Boolean = false,
+)
 
 enum class CloudSyncAction { NONE, UPLOAD, DOWNLOAD, ADOPT, ADOPT_TOMBSTONE, CONFLICT }
 
@@ -123,6 +125,7 @@ object CloudSyncPlanner {
             // document with the same ID but different digest must never be
             // treated as an unchanged version, even when the head matches.
             if (acknowledged.playlistDigest != checkpoint.playlistDigest ||
+                acknowledged.deleted != checkpoint.deleted ||
                 (acknowledged.deleted && !locallyDeleted)
             ) return CloudSyncDecision(
                 CloudSyncAction.CONFLICT, heads, "Checkpoint cloud non corrispondente",

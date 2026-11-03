@@ -69,6 +69,15 @@ class CloudLocalSyncInspectorTest {
             listOf(root, remote, fork)).action)
     }
 
+    @Test fun acknowledgedDeletionIsNotMistakenForMissingPlaylist() {
+        val tombstone = CloudCheckpoint("rev-deleted", "a".repeat(64), deleted = true)
+        assertEquals(0, CloudLocalSyncInspector.inspect(
+            emptyList(), mapOf("playlist-1" to tombstone)).missingCount)
+        assertEquals(1, CloudLocalSyncInspector.inspect(
+            listOf(playlist(entry("new", 'b'))),
+            mapOf("playlist-1" to tombstone)).pendingCount)
+    }
+
     @Test fun missingLocalSnapshotIsWarningNotAutomaticCloudDeletion() {
         val checkpoint = CloudCheckpoint("rev-a", "a".repeat(64))
         val state = CloudLocalSyncInspector.inspect(

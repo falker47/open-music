@@ -12,10 +12,14 @@ object CloudLocalSyncInspector {
     ): CloudLocalSyncState {
         val localIds = playlists.map { it.playlistId }.toSet()
         val pending = playlists.count { playlist ->
-            checkpoints[playlist.playlistId]?.playlistDigest != CloudPlaylistDigest.of(playlist)
+            checkpoints[playlist.playlistId]?.let {
+                it.deleted || it.playlistDigest != CloudPlaylistDigest.of(playlist)
+            } ?: true
         }
         // A missing local playlist is NOT permission to delete its cloud snapshot.
-        val missing = checkpoints.keys.count { it !in localIds }
+        val missing = checkpoints.count { (id, checkpoint) ->
+            id !in localIds && !checkpoint.deleted
+        }
         return CloudLocalSyncState(pending, missing)
     }
 }

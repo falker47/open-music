@@ -241,7 +241,7 @@ internal class CloudSyncCoordinator(context: Context) {
                 api.upload(CloudSnapshotCodec.name(revision.revisionId),
                     CloudSnapshotCodec.metadata(revision).toString(), body)
                 uploaded++
-                val ack = CloudCheckpoint(revision.revisionId, revision.playlistDigest)
+                val ack = CloudCheckpoint(revision.revisionId, revision.playlistDigest, revision.deleted)
                 if (mergeRemote) {
                     // Commit the local replacement atomically before acknowledging merge.
                     pendingMergeAcks[task.playlistId] = ack
@@ -282,12 +282,12 @@ internal class CloudSyncCoordinator(context: Context) {
                 if (!checkpoints.containsKey(task.playlistId) || task.heads.size <= 1) {
                     val chosen = head ?: error("Versione cloud assente")
                     checkpoints[task.playlistId] =
-                        CloudCheckpoint(chosen.revisionId, chosen.playlistDigest)
+                        CloudCheckpoint(chosen.revisionId, chosen.playlistDigest, chosen.deleted)
                 }
             } else if (task.action == CloudSyncAction.ADOPT) {
                 val chosen = head ?: error("Revisione cloud assente")
                 checkpoints[task.playlistId] =
-                    CloudCheckpoint(chosen.revisionId, chosen.playlistDigest)
+                    CloudCheckpoint(chosen.revisionId, chosen.playlistDigest, chosen.deleted)
                 adopted++
             } else if (task.action == CloudSyncAction.ADOPT_TOMBSTONE) {
                 val chosen = head ?: error("Tombstone cloud assente")
@@ -297,7 +297,7 @@ internal class CloudSyncCoordinator(context: Context) {
                     saveLocal = true
                 }
                 checkpoints[task.playlistId] =
-                    CloudCheckpoint(chosen.revisionId, chosen.playlistDigest)
+                    CloudCheckpoint(chosen.revisionId, chosen.playlistDigest, chosen.deleted)
                 adopted++
             }
         }

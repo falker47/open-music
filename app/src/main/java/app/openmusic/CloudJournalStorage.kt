@@ -27,7 +27,8 @@ internal class CloudJournalStorage(context: Context) {
             val point = items.getJSONObject(i)
             val id = point.getString("playlistId")
             require(id.isNotBlank() && !points.containsKey(id)) { "Registro cloud non valido" }
-            points[id] = CloudCheckpoint(point.getString("revisionId"), point.getString("digest"))
+            points[id] = CloudCheckpoint(point.getString("revisionId"),
+                point.getString("digest"), point.optBoolean("deleted", false))
         }
         return CloudJournal(if (root.isNull("binding")) null else root.optString("binding").takeIf { it.isNotBlank() }, points)
     }
@@ -36,7 +37,8 @@ internal class CloudJournalStorage(context: Context) {
         val items = JSONArray()
         journal.checkpoints.forEach { (playlistId, point) ->
             items.put(JSONObject().put("playlistId", playlistId)
-                .put("revisionId", point.revisionId).put("digest", point.playlistDigest))
+                .put("revisionId", point.revisionId).put("digest", point.playlistDigest)
+                .put("deleted", point.deleted))
         }
         val bytes = JSONObject().put("schema", 1)
             .put("binding", journal.binding ?: JSONObject.NULL)
