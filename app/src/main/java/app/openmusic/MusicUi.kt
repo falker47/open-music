@@ -670,7 +670,7 @@ internal fun MusicPlaybackSeek(
             // Material Slider reserves 16dp for the thumb at each end. Extend
             // its width by 32dp so the visible track aligns with the cover.
             modifier = Modifier.align(Alignment.BottomCenter)
-                .width(if (alignTrackToEdges) maxWidth + 32.dp else maxWidth)
+                .requiredWidth(if (alignTrackToEdges) maxWidth + 32.dp else maxWidth)
                 .height(if (compact) 32.dp else 50.dp),
             colors = SliderDefaults.colors(
                 thumbColor = MusicPalette.primary,
@@ -817,7 +817,7 @@ internal fun MusicNowPlaying(
                         IconButton(
                             onClick = onToggleRepeatOne,
                             modifier = Modifier.align(Alignment.TopStart)
-                                .offset(y = 17.dp).size(48.dp),
+                                .size(48.dp),
                         ) {
                             Icon(
                                 if (repeatOneEnabled) Icons.Rounded.RepeatOne
@@ -840,7 +840,7 @@ internal fun MusicNowPlaying(
                         IconButton(
                             onClick = onToggleShuffle,
                             modifier = Modifier.align(Alignment.TopEnd)
-                                .offset(y = 17.dp).size(48.dp),
+                                .size(48.dp),
                         ) {
                             Icon(Icons.Rounded.Shuffle,
                                 contentDescription = if (shuffleEnabled)
