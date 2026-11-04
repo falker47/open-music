@@ -90,6 +90,7 @@ import app.openmusic.core.PlaylistEditorRowState
 import app.openmusic.core.PlaylistContentEditor
 import app.openmusic.core.PlaybackUiLogic
 import app.openmusic.core.PlaylistUiPresentation
+import app.openmusic.core.PlaylistMenuCommand
 import app.openmusic.core.PlaybackQueuePlan
 import app.openmusic.core.PlaylistVerification
 import app.openmusic.core.VerificationDisplay
@@ -272,46 +273,41 @@ internal fun MusicHeader(
 }
 
 /**
- * Match the Library brand's 48dp first row, including the image's vertical
- * alignment. The compact Drive card continues below that row when required;
- * squeezing four independent actions into the wordmark height would overlap
- * touch targets.
+ * The visible Drive background and the approved Playlist wordmark occupy the
+ * same centered 38dp frame. Transparent action hitboxes extend to 48dp above
+ * the purely decorative background; nothing is clipped by the Surface.
  */
 @Composable
 internal fun MusicPlaylistHeader(
-    enabled: Boolean, hasPlaylists: Boolean, cloudLinked: Boolean,
+    enabled: Boolean, cloudLinked: Boolean,
     driveStatus: String, driveWarning: Boolean, showCloudMenu: Boolean,
-    onCreate: () -> Unit, onImport: () -> Unit, onDrive: () -> Unit,
-    onShowCloudMenu: () -> Unit, onDismissCloudMenu: () -> Unit,
-    onDisconnect: () -> Unit,
+    onDrive: () -> Unit, onShowCloudMenu: () -> Unit,
+    onDismissCloudMenu: () -> Unit, onDisconnect: () -> Unit,
 ) {
     BoxWithConstraints(
         Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 14.dp),
     ) {
-        // Body has 18dp margins on each side. With the right outer margin,
-        // half the content width corresponds to exactly half the screen.
-        val rightCardWidth = PlaylistUiPresentation
-            .playlistHeaderPanelWidthDp(maxWidth.value).dp
+        val rightCardWidth =
+            PlaylistUiPresentation.playlistHeaderPanelWidthDp(maxWidth.value).dp
         Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.Top,
+            Modifier.fillMaxWidth()
+                .height(PlaylistUiPresentation.playlistHeaderTouchHeightDp.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Image(
                 painter = painterResource(R.drawable.open_music_playlist_wordmark),
                 contentDescription = "Playlist",
                 modifier = Modifier.weight(1f)
-                    .padding(top = PlaylistUiPresentation.playlistHeaderWordmarkTopInsetDp.dp)
                     .height(PlaylistUiPresentation.playlistHeaderWordmarkHeightDp.dp),
                 contentScale = ContentScale.Fit,
                 alignment = Alignment.CenterStart,
             )
             Spacer(Modifier.width(8.dp))
-            MusicPlaylistToolbar(
+            MusicPlaylistDriveCard(
                 modifier = Modifier.width(rightCardWidth),
-                enabled = enabled, hasPlaylists = hasPlaylists,
-                cloudLinked = cloudLinked, driveStatus = driveStatus,
-                driveWarning = driveWarning, showCloudMenu = showCloudMenu,
-                onCreate = onCreate, onImport = onImport, onDrive = onDrive,
+                enabled = enabled, cloudLinked = cloudLinked,
+                driveStatus = driveStatus, driveWarning = driveWarning,
+                showCloudMenu = showCloudMenu, onDrive = onDrive,
                 onShowCloudMenu = onShowCloudMenu,
                 onDismissCloudMenu = onDismissCloudMenu,
                 onDisconnect = onDisconnect,
@@ -320,101 +316,83 @@ internal fun MusicPlaylistHeader(
     }
 }
 
-/**
- * Compact right-hand controls: one 48dp Drive row, followed by a pair of
- * global playlist actions if playlists exist. The Drive status stays beside
- * its controls; no independent full-width card consumes the list area.
- */
+/** Only cloud status and cloud controls belong in the Drive component. */
 @Composable
-internal fun MusicPlaylistToolbar(
-    modifier: Modifier, enabled: Boolean, hasPlaylists: Boolean,
-    cloudLinked: Boolean, driveStatus: String, driveWarning: Boolean,
-    showCloudMenu: Boolean, onCreate: () -> Unit, onImport: () -> Unit,
+private fun MusicPlaylistDriveCard(
+    modifier: Modifier, enabled: Boolean, cloudLinked: Boolean,
+    driveStatus: String, driveWarning: Boolean, showCloudMenu: Boolean,
     onDrive: () -> Unit, onShowCloudMenu: () -> Unit,
     onDismissCloudMenu: () -> Unit, onDisconnect: () -> Unit,
 ) {
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
-        color = MusicPalette.surface,
-        border = BorderStroke(1.dp, MusicPalette.border.copy(alpha = 0.7f)),
+    var showStatusDetails by remember { mutableStateOf(false) }
+    val enlargedFont = LocalDensity.current.fontScale > 1.35f
+    BoxWithConstraints(
+        modifier.height(PlaylistUiPresentation.playlistHeaderTouchHeightDp.dp),
     ) {
-        BoxWithConstraints {
-            // The full name is retained when it fits. On narrow/linked phones
-            // the visible label is shorter, while TalkBack always reads both.
-            val shortDriveLabel = maxWidth < 160.dp ||
-                (cloudLinked && maxWidth < 185.dp)
-            Column(Modifier.fillMaxWidth()) {
-                Row(
-                    Modifier.fillMaxWidth()
-                        .heightIn(min = PlaylistUiPresentation.playlistHeaderControlRowHeightDp.dp)
-                        .padding(start = 6.dp, end = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(
-                        Modifier.weight(1f).padding(vertical = 4.dp)
-                            .semantics(mergeDescendants = true) {
-                                contentDescription = "Google Drive, $driveStatus"
-                            },
-                        verticalArrangement = Arrangement.spacedBy(1.dp),
-                    ) {
-                        Text(
-                            if (shortDriveLabel) "Drive" else "Google Drive",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MusicPalette.text,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            driveStatus,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (driveWarning) MusicPalette.warning
-                                else MusicPalette.muted,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    MusicDriveSyncButton(enabled, cloudLinked, onDrive)
-                    if (cloudLinked) {
-                        MusicDriveMenuButton(
-                            enabled, showCloudMenu, onShowCloudMenu,
-                            onDismissCloudMenu, onDisconnect,
-                        )
-                    }
-                }
-                if (hasPlaylists) {
-                    HorizontalDivider(
-                        thickness = 1.dp,
-                        color = MusicPalette.border.copy(alpha = 0.55f),
+        val shortDriveLabel = maxWidth < 200.dp
+        // This Surface is visual only. Interactive buttons overlay it with
+        // the platform's full 48dp touch target, including top/bottom overflow.
+        Surface(
+            modifier = Modifier.align(Alignment.Center)
+                .fillMaxWidth()
+                .height(PlaylistUiPresentation.playlistHeaderVisualHeightDp.dp),
+            shape = RoundedCornerShape(12.dp),
+            color = MusicPalette.surface,
+            border = BorderStroke(1.dp, MusicPalette.border.copy(alpha = 0.7f)),
+        ) {
+            Spacer(Modifier.fillMaxSize())
+        }
+        Row(
+            Modifier.fillMaxSize().padding(start = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                Modifier.weight(1f)
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable { showStatusDetails = true }
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = "Google Drive: $driveStatus. Mostra stato completo"
+                    },
+                verticalArrangement = Arrangement.spacedBy(0.dp),
+            ) {
+                if (!enlargedFont) {
+                    Text(
+                        if (shortDriveLabel) "Drive" else "Google Drive",
+                        color = MusicPalette.text,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
-                    Row(
-                        Modifier.fillMaxWidth().heightIn(
-                            min = PlaylistUiPresentation.playlistHeaderControlRowHeightDp.dp,
-                        ),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        MusicPlaylistGlobalButton(
-                            title = "Nuova",
-                            accessibleLabel = "Nuova playlist",
-                            icon = Icons.Rounded.Add,
-                            modifier = Modifier.weight(1f), enabled = enabled,
-                            primary = true, onClick = onCreate,
-                        )
-                        Box(
-                            Modifier.width(1.dp).height(24.dp)
-                                .background(MusicPalette.border.copy(alpha = 0.55f)),
-                        )
-                        MusicPlaylistGlobalButton(
-                            title = "Importa",
-                            accessibleLabel = "Importa playlist",
-                            icon = Icons.Rounded.FileDownload,
-                            modifier = Modifier.weight(1f), enabled = enabled,
-                            primary = false, onClick = onImport,
-                        )
-                    }
                 }
+                Text(
+                    driveStatus,
+                    color = if (driveWarning) MusicPalette.warning else MusicPalette.muted,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            MusicDriveSyncButton(enabled, cloudLinked, onDrive)
+            if (cloudLinked) {
+                MusicDriveMenuButton(
+                    enabled, showCloudMenu, onShowCloudMenu,
+                    onDismissCloudMenu, onDisconnect,
+                )
             }
         }
+    }
+    if (showStatusDetails) {
+        AlertDialog(
+            onDismissRequest = { showStatusDetails = false },
+            title = { Text("Stato Google Drive") },
+            text = { Text(driveStatus) },
+            confirmButton = {
+                TextButton(onClick = { showStatusDetails = false }) {
+                    Text("Chiudi")
+                }
+            },
+            containerColor = MusicPalette.surface,
+        )
     }
 }
 
@@ -440,42 +418,13 @@ private fun MusicDriveMenuButton(
     Box {
         IconButton(
             onClick = onShowCloudMenu, enabled = enabled,
-            modifier = Modifier.size(40.dp),
+            modifier = Modifier.size(48.dp),
         ) {
             Icon(Icons.Rounded.MoreVert, contentDescription = "Opzioni Google Drive")
         }
         DropdownMenu(expanded = showCloudMenu, onDismissRequest = onDismissCloudMenu) {
             DropdownMenuItem(text = { Text("Scollega Drive") }, onClick = onDisconnect)
         }
-    }
-}
-
-@Composable
-private fun MusicPlaylistGlobalButton(
-    title: String, accessibleLabel: String, icon: ImageVector, modifier: Modifier,
-    enabled: Boolean, primary: Boolean, onClick: () -> Unit,
-) {
-    val largeFont = LocalDensity.current.fontScale > 1.4f
-    TextButton(
-        onClick = onClick, enabled = enabled,
-        modifier = modifier.heightIn(
-            min = PlaylistUiPresentation.playlistHeaderControlRowHeightDp.dp,
-        ).semantics { contentDescription = accessibleLabel },
-        contentPadding = PaddingValues(horizontal = 2.dp, vertical = 4.dp),
-        colors = ButtonDefaults.textButtonColors(
-            contentColor = if (primary) MusicPalette.primary else MusicPalette.muted,
-        ),
-        shape = RoundedCornerShape(10.dp),
-    ) {
-        // Text takes priority over decoration when Android font scaling grows.
-        if (!largeFont) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(3.dp))
-        }
-        Text(
-            title, style = MaterialTheme.typography.labelSmall,
-            maxLines = 2, overflow = TextOverflow.Ellipsis,
-        )
     }
 }
 
@@ -654,6 +603,7 @@ internal fun MusicPlaylistNavigation(
     playlists: List<PortablePlaylist>, selectedId: String?, busy: Boolean,
     availableCount: Int, analyzing: Boolean, needsVerification: Boolean,
     onSelect: (String) -> Unit, onAddTracks: () -> Unit,
+    onCreate: () -> Unit, onImport: () -> Unit,
     onRelink: () -> Unit, onExport: () -> Unit,
     onRename: () -> Unit, onDelete: () -> Unit,
 ) {
@@ -736,26 +686,41 @@ internal fun MusicPlaylistNavigation(
                     expanded = showActions,
                     onDismissRequest = { showActions = false },
                 ) {
-                    DropdownMenuItem(
-                        text = { Text("Trova file") },
-                        onClick = { showActions = false; onRelink() },
-                        leadingIcon = { Icon(Icons.Rounded.Link, contentDescription = null) },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Esporta") },
-                        onClick = { showActions = false; onExport() },
-                        leadingIcon = { Icon(Icons.Rounded.FileUpload, contentDescription = null) },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Rinomina") },
-                        onClick = { showActions = false; onRename() },
-                        leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null) },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Elimina") },
-                        onClick = { showActions = false; onDelete() },
-                        leadingIcon = { Icon(Icons.Rounded.DeleteOutline, contentDescription = null) },
-                    )
+                    PlaylistUiPresentation.playlistMenuOrder().forEach { command ->
+                        val actionName = when (command) {
+                            PlaylistMenuCommand.NEW_PLAYLIST -> "Nuova playlist"
+                            PlaylistMenuCommand.IMPORT -> "Importa"
+                            PlaylistMenuCommand.EXPORT -> "Esporta"
+                            PlaylistMenuCommand.RENAME -> "Rinomina"
+                            PlaylistMenuCommand.DELETE -> "Elimina"
+                            PlaylistMenuCommand.RELINK -> "Trova file"
+                        }
+                        val actionIcon = when (command) {
+                            PlaylistMenuCommand.NEW_PLAYLIST -> Icons.Rounded.Add
+                            PlaylistMenuCommand.IMPORT -> Icons.Rounded.FileDownload
+                            PlaylistMenuCommand.EXPORT -> Icons.Rounded.FileUpload
+                            PlaylistMenuCommand.RENAME -> Icons.Rounded.Edit
+                            PlaylistMenuCommand.DELETE -> Icons.Rounded.DeleteOutline
+                            PlaylistMenuCommand.RELINK -> Icons.Rounded.Link
+                        }
+                        DropdownMenuItem(
+                            text = { Text(actionName) },
+                            onClick = {
+                                showActions = false
+                                when (command) {
+                                    PlaylistMenuCommand.NEW_PLAYLIST -> onCreate()
+                                    PlaylistMenuCommand.IMPORT -> onImport()
+                                    PlaylistMenuCommand.EXPORT -> onExport()
+                                    PlaylistMenuCommand.RENAME -> onRename()
+                                    PlaylistMenuCommand.DELETE -> onDelete()
+                                    PlaylistMenuCommand.RELINK -> onRelink()
+                                }
+                            },
+                            leadingIcon = {
+                                Icon(actionIcon, contentDescription = null)
+                            },
+                        )
+                    }
                 }
             }
         }

@@ -1393,16 +1393,11 @@ private fun OpenMusicApp() {
                     onQueue = { showQueue = true },
                 ) else MusicPlaylistHeader(
                     enabled = busy.isEmpty() && localLoaded,
-                    hasPlaylists = playlists.isNotEmpty(),
                     cloudLinked = cloudLinked,
                     driveStatus = driveStatus,
                     driveWarning = cloudConflicts.isNotEmpty() ||
                         cloudSyncError != null || localSyncStatus.missingCount > 0,
                     showCloudMenu = showCloudMenu,
-                    onCreate = { createDialog = true },
-                    onImport = {
-                        importer.launch(arrayOf("application/json", "text/plain"))
-                    },
                     onDrive = { requestDriveAccess() },
                     onShowCloudMenu = { showCloudMenu = true },
                     onDismissCloudMenu = { showCloudMenu = false },
@@ -1496,6 +1491,10 @@ private fun OpenMusicApp() {
                                     onSelect = { selectedId = it },
                                     onAddTracks = {
                                         selected?.let { openPicker(it.playlistId) }
+                                    },
+                                    onCreate = { createDialog = true },
+                                    onImport = {
+                                        importer.launch(arrayOf("application/json", "text/plain"))
                                     },
                                     onRelink = { relink() },
                                     onExport = {

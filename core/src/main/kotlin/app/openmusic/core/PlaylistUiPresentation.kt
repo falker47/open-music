@@ -1,5 +1,10 @@
 package app.openmusic.core
 
+/** Explicitly ordered contextual actions; UI dispatch must follow this single list. */
+enum class PlaylistMenuCommand {
+    NEW_PLAYLIST, IMPORT, EXPORT, RENAME, DELETE, RELINK
+}
+
 /** Pure Playlist/seek presentation geometry, independent of the Android SDK. */
 object PlaylistUiPresentation {
     fun availability(
@@ -30,10 +35,20 @@ object PlaylistUiPresentation {
     fun playlistHeaderPanelWidthDp(contentWidthDp: Float): Float =
         contentWidthDp.coerceAtLeast(0f) / 2f
 
-    /** Keep 48dp interaction rows; a 1dp divider separates the global actions. */
-    fun playlistHeaderMinPanelHeightDp(hasPlaylists: Boolean): Float =
-        playlistHeaderControlRowHeightDp +
-            if (hasPlaylists) 1f + playlistHeaderControlRowHeightDp else 0f
+    /** Visible card and wordmark share a 38dp frame; controls keep 48dp hits. */
+    const val playlistHeaderVisualHeightDp = playlistHeaderWordmarkHeightDp
+    const val playlistHeaderTouchHeightDp = playlistHeaderControlRowHeightDp
+    fun playlistHeaderMinPanelHeightDp(): Float = playlistHeaderTouchHeightDp
+
+    /** Offline create/import are contextual playlist actions, not Drive actions. */
+    fun playlistMenuOrder(): List<PlaylistMenuCommand> = listOf(
+        PlaylistMenuCommand.NEW_PLAYLIST,
+        PlaylistMenuCommand.IMPORT,
+        PlaylistMenuCommand.EXPORT,
+        PlaylistMenuCommand.RENAME,
+        PlaylistMenuCommand.DELETE,
+        PlaylistMenuCommand.RELINK,
+    )
 
     /** Equal 48dp touch targets, free horizontal gap = 1.3x button width when possible. */
     fun topControlGapDp(availableWidthDp: Float, buttonWidthDp: Float = 48f): Float =

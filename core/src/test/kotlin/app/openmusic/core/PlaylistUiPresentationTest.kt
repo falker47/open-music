@@ -83,8 +83,7 @@ class PlaylistUiPresentationTest {
         assertEquals(48f, PlaylistUiPresentation.playlistHeaderControlRowHeightDp, 0.001f)
         assertEquals(38f, PlaylistUiPresentation.playlistHeaderWordmarkHeightDp, 0.001f)
         assertEquals(5f, PlaylistUiPresentation.playlistHeaderWordmarkTopInsetDp, 0.001f)
-        assertEquals(48f, PlaylistUiPresentation.playlistHeaderMinPanelHeightDp(false), 0.001f)
-        assertEquals(97f, PlaylistUiPresentation.playlistHeaderMinPanelHeightDp(true), 0.001f)
+        assertEquals(48f, PlaylistUiPresentation.playlistHeaderMinPanelHeightDp(), 0.001f)
     }
 
     @Test fun driveCardVisualBoundsMatchTheWordmarkEvenWhenLinked() {
@@ -93,8 +92,7 @@ class PlaylistUiPresentationTest {
         assertEquals(
             PlaylistUiPresentation.playlistHeaderWordmarkHeightDp,
             PlaylistUiPresentation.playlistHeaderVisualHeightDp, 0.001f)
-        assertEquals(48f, PlaylistUiPresentation.playlistHeaderMinPanelHeightDp(false), 0.001f)
-        assertEquals(48f, PlaylistUiPresentation.playlistHeaderMinPanelHeightDp(true), 0.001f)
+        assertEquals(48f, PlaylistUiPresentation.playlistHeaderMinPanelHeightDp(), 0.001f)
     }
 
     @Test fun playlistContextMenuHasCreateImportExportRenameDeleteThenRelink() {
