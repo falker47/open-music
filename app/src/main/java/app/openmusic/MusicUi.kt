@@ -363,12 +363,13 @@ private fun MusicPlaylistDriveCard(
                     },
                 verticalArrangement = Arrangement.spacedBy(0.dp),
             ) {
-                if (!enlargedFont) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Rounded.Cloud, contentDescription = null,
-                            tint = MusicPalette.muted, modifier = Modifier.size(13.dp),
-                        )
+                // Keep the cloud glyph visible even at large accessibility font scales.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Rounded.Cloud, contentDescription = null,
+                        tint = MusicPalette.muted, modifier = Modifier.size(13.dp),
+                    )
+                    if (!enlargedFont) {
                         Spacer(Modifier.width(3.dp))
                         Text(
                             if (shortDriveLabel) "Drive" else "Google Drive",
