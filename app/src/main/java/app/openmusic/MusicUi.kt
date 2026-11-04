@@ -462,16 +462,22 @@ internal fun MusicEmptyState(
                 style = MaterialTheme.typography.bodyMedium)
             if (buttonLabel != null && onAction != null) {
                 Spacer(Modifier.height(14.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Button(onClick = onAction, modifier = Modifier.heightIn(min = 48.dp)) {
-                        Text(buttonLabel)
-                    }
-                    if (secondaryButtonLabel != null && onSecondaryAction != null) {
+                if (secondaryButtonLabel != null && onSecondaryAction != null) {
+                    // Two full-width actions fit even narrow devices and large fonts.
+                    Column(Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = onAction,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                            Text(buttonLabel)
+                        }
                         OutlinedButton(onClick = onSecondaryAction,
-                            modifier = Modifier.heightIn(min = 48.dp)) {
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                             Text(secondaryButtonLabel)
                         }
+                    }
+                } else {
+                    Button(onClick = onAction, modifier = Modifier.heightIn(min = 48.dp)) {
+                        Text(buttonLabel)
                     }
                 }
             }
