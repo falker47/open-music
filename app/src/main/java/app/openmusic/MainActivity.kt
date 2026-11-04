@@ -1299,7 +1299,7 @@ private fun OpenMusicApp() {
         !localLoaded -> "Caricamento playlist"
         cloudConflicts.isNotEmpty() -> "Conflitto: scegli una versione"
         cloudSyncError != null -> cloudSyncError!!
-        !cloudLinked -> "Playlist solo sul telefono"
+        !cloudLinked -> "Non collegato"
         localSyncStatus.missingCount > 0 ->
             if (deletedIds.any { cloudState.checkpoints[it]?.deleted == false })
                 "Eliminazione playlist da confermare su Drive"
@@ -1391,7 +1391,20 @@ private fun OpenMusicApp() {
                     enabled = busy.isEmpty(),
                     onScan = { requestScan() },
                     onQueue = { showQueue = true },
-                ) else MusicPlaylistHeader()
+                ) else MusicPlaylistHeader(
+                    enabled = busy.isEmpty() && localLoaded,
+                    cloudLinked = cloudLinked, driveStatus = driveStatus,
+                    driveWarning = cloudConflicts.isNotEmpty() || cloudSyncError != null ||
+                        localSyncStatus.missingCount > 0,
+                    showCloudMenu = showCloudMenu,
+                    onDrive = { requestDriveAccess() },
+                    onShowCloudMenu = { showCloudMenu = true },
+                    onDismissCloudMenu = { showCloudMenu = false },
+                    onDisconnect = {
+                        showCloudMenu = false
+                        showCloudDisconnect = true
+                    },
+                )
                 if (busy.isNotEmpty()) MusicBusyIndicator(
                     busy, onCancel = if (verifying) ({ analysisJob?.cancel() }) else null,
                 )
@@ -1465,26 +1478,17 @@ private fun OpenMusicApp() {
                         contentPadding = PaddingValues(bottom = 20.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        item {
-                            MusicPlaylistToolbar(
-                                enabled = busy.isEmpty() && localLoaded,
-                                hasPlaylists = playlists.isNotEmpty(),
-                                cloudLinked = cloudLinked, driveStatus = driveStatus,
-                                driveWarning = cloudSyncError != null ||
-                                    localSyncStatus.missingCount > 0,
-                                showCloudMenu = showCloudMenu,
-                                onCreate = { createDialog = true },
-                                onImport = {
-                                    importer.launch(arrayOf("application/json", "text/plain"))
-                                },
-                                onDrive = { requestDriveAccess() },
-                                onShowCloudMenu = { showCloudMenu = true },
-                                onDismissCloudMenu = { showCloudMenu = false },
-                                onDisconnect = {
-                                    showCloudMenu = false
-                                    showCloudDisconnect = true
-                                },
-                            )
+                        if (playlists.isNotEmpty()) {
+                            item {
+                                MusicPlaylistToolbar(
+                                    enabled = busy.isEmpty() && localLoaded,
+                                    hasPlaylists = true,
+                                    onCreate = { createDialog = true },
+                                    onImport = {
+                                        importer.launch(arrayOf("application/json", "text/plain"))
+                                    },
+                                )
+                            }
                         }
 
                         if (playlists.isNotEmpty()) {
@@ -1544,11 +1548,6 @@ private fun OpenMusicApp() {
                                     needsVerification = !verificationComplete && !verifying,
                                     unreadableCount = unreadableCount, missingTitles = missingTitles,
                                 )
-                            }
-                            if (latestAnalysis.isNotEmpty()) item {
-                                Text(latestAnalysis, color = Muted, maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    style = MaterialTheme.typography.labelSmall)
                             }
                             if (selected.tracks.isEmpty()) {
                                 item {

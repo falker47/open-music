@@ -1,23 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Original rounded geometric letter paths, constructed to match the approved
-     Open Music vector wordmark's weight and amber color. No third-party font. -->
+<!-- Derived from the approved Open Music wordmark contours (no third-party font).
+     The original p bowl/negative space, l/i shafts, i dot and s are reused.
+     Missing a/y/t forms follow the same heavy rounded stroke and baseline. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="164dp"
-    android:height="51dp"
-    android:viewportWidth="500"
-    android:viewportHeight="155">
-    <path
-        android:fillColor="@android:color/transparent"
-        android:strokeColor="#ED8840"
-        android:strokeWidth="20"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:pathData="M20,116 V26 H61 C92,26 92,73 61,73 H20
-            M114,24 V116
-            M198,86 C198,68 188,58 173,58 C158,58 147,70 147,87 C147,105 158,116 173,116 C188,116 198,106 198,86 Z M198,61 V116
-            M224,63 L250,114 L275,63 M250,114 Q245,132 232,140
-            M297,24 V116
-            M328,64 V116 M328,31 L328,31.2
-            M399,65 C385,54 364,55 358,68 C351,81 367,85 382,89 C407,96 406,109 391,115 C379,120 365,113 356,106
-            M448,37 V111 Q448,116 454,116 M427,64 H477" />
+    android:width="135dp" android:height="39dp"
+    android:viewportWidth="1235" android:viewportHeight="356">
+    <group android:translateY="-182">
+        <!-- Lift the exact p contour to form a capital-height P. -->
+        <group android:translateX="-325" android:translateY="-70">
+            <path android:fillColor="#ED8840" android:fillType="evenOdd"
+                android:pathData="M508,272 L491,263 L468,256 L434,255 L422,257 L403,263 L380,276 L361,294 L353,305 L341,330 L335,361 L335,524 L340,533 L346,536 L383,536 L391,531 L394,523 L395,462 L408,468 L431,474 L454,475 L476,471 L492,465 L511,454 L529,437 L537,426 L547,407 L553,388 L555,376 L554,343 L549,324 L538,302 L529,290 Z M437,309 L452,309 L461,311 L476,319 L490,335 L494,343 L497,355 L496,377 L490,391 L484,400 L469,412 L460,416 L450,418 L431,416 L415,408 L401,393 L396,383 L393,372 L394,350 L402,332 L413,320 L419,316 Z"/>
+        </group>
+        <group android:translateX="-1486" android:pivotY="471" android:scaleY="1.35">
+            <path android:fillColor="#ED8840" android:pathData="M1750,262 L1745,264 L1741,268 L1738,275 L1738,459 L1741,466 L1748,471 L1787,471 L1795,465 L1797,460 L1797,274 L1795,269 L1790,264 L1785,262 Z"/>
+        </group>
+        <path android:fillColor="@android:color/transparent" android:strokeColor="#ED8840"
+            android:strokeWidth="55" android:strokeLineCap="round" android:strokeLineJoin="round"
+            android:pathData="M470,358 C470,316 446,284 413,284 C376,284 351,317 351,365 C351,412 377,447 413,447 C447,447 470,415 470,367 M480,310 V445"/>
+        <path android:fillColor="@android:color/transparent" android:strokeColor="#ED8840"
+            android:strokeWidth="54" android:strokeLineCap="round" android:strokeLineJoin="round"
+            android:pathData="M543,300 L616,446 L681,300 M616,446 L583,516"/>
+        <group android:translateX="-1018" android:pivotY="471" android:scaleY="1.35">
+            <path android:fillColor="#ED8840" android:pathData="M1750,262 L1745,264 L1741,268 L1738,275 L1738,459 L1741,466 L1748,471 L1787,471 L1795,465 L1797,460 L1797,274 L1795,269 L1790,264 L1785,262 Z"/>
+        </group>
+        <group android:translateX="-928">
+            <path android:fillColor="#ED8840" android:pathData="M1750,262 L1745,264 L1741,268 L1738,275 L1738,459 L1741,466 L1748,471 L1787,471 L1795,465 L1797,460 L1797,274 L1795,269 L1790,264 L1785,262 Z M1762,186 L1753,189 L1747,193 L1741,200 L1737,209 L1737,225 L1740,233 L1746,241 L1759,248 L1773,249 L1784,245 L1794,236 L1799,224 L1799,210 L1795,200 L1785,190 L1774,186 Z"/>
+        </group>
+        <group android:translateX="-659">
+            <path android:fillColor="#ED8840" android:pathData="M1630,257 L1605,264 L1592,271 L1580,281 L1572,292 L1565,308 L1564,335 L1570,352 L1577,362 L1585,369 L1596,376 L1624,386 L1655,392 L1661,395 L1667,402 L1667,411 L1661,418 L1655,421 L1631,422 L1614,417 L1592,403 L1583,401 L1578,403 L1555,430 L1554,437 L1557,443 L1565,450 L1595,467 L1630,475 L1653,475 L1670,472 L1687,466 L1704,455 L1713,446 L1722,432 L1726,421 L1728,410 L1727,390 L1720,372 L1715,365 L1705,356 L1691,348 L1675,342 L1634,333 L1625,327 L1623,323 L1623,317 L1625,313 L1631,308 L1637,306 L1654,306 L1668,310 L1688,321 L1699,321 L1704,317 L1720,295 L1721,284 L1711,274 L1693,265 L1678,260 L1661,257 Z"/>
+        </group>
+        <path android:fillColor="@android:color/transparent" android:strokeColor="#ED8840"
+            android:strokeWidth="54" android:strokeLineCap="round" android:strokeLineJoin="round"
+            android:pathData="M1151,220 V421 Q1151,446 1176,446 M1109,300 H1203"/>
+    </group>
 </vector>
