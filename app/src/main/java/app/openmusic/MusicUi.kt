@@ -272,80 +272,115 @@ internal fun MusicHeader(
 }
 
 /**
- * The Playlist wordmark uses exactly the same header position and vertical
- * metrics as the approved Library wordmark. Actions belong BELOW this header.
+ * Match the Library brand's 48dp first row, including the image's vertical
+ * alignment. The compact Drive card continues below that row when required;
+ * squeezing four independent actions into the wordmark height would overlap
+ * touch targets.
  */
 @Composable
-internal fun MusicPlaylistHeader() {
-    Row(
-        Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 14.dp).heightIn(min = 40.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Image(
-            painter = painterResource(R.drawable.open_music_playlist_wordmark),
-            contentDescription = "Playlist",
-            modifier = Modifier.weight(1f).height(38.dp),
-            contentScale = ContentScale.Fit,
-            alignment = Alignment.CenterStart,
-        )
-    }
-}
-
-/**
- * One unified secondary panel instead of three competing cards.
- * The title and status of Drive stay on the SAME row as both its controls;
- * its global actions are an inline footer, absent for zero playlists.
- */
-@Composable
-internal fun MusicPlaylistToolbar(
+internal fun MusicPlaylistHeader(
     enabled: Boolean, hasPlaylists: Boolean, cloudLinked: Boolean,
     driveStatus: String, driveWarning: Boolean, showCloudMenu: Boolean,
     onCreate: () -> Unit, onImport: () -> Unit, onDrive: () -> Unit,
     onShowCloudMenu: () -> Unit, onDismissCloudMenu: () -> Unit,
     onDisconnect: () -> Unit,
 ) {
+    BoxWithConstraints(
+        Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 14.dp),
+    ) {
+        // Body has 18dp margins on each side. With the right outer margin,
+        // half the content width corresponds to exactly half the screen.
+        val rightCardWidth = PlaylistUiPresentation
+            .playlistHeaderPanelWidthDp(maxWidth.value).dp
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Image(
+                painter = painterResource(R.drawable.open_music_playlist_wordmark),
+                contentDescription = "Playlist",
+                modifier = Modifier.weight(1f)
+                    .padding(top = PlaylistUiPresentation.playlistHeaderWordmarkTopInsetDp.dp)
+                    .height(PlaylistUiPresentation.playlistHeaderWordmarkHeightDp.dp),
+                contentScale = ContentScale.Fit,
+                alignment = Alignment.CenterStart,
+            )
+            Spacer(Modifier.width(8.dp))
+            MusicPlaylistToolbar(
+                modifier = Modifier.width(rightCardWidth),
+                enabled = enabled, hasPlaylists = hasPlaylists,
+                cloudLinked = cloudLinked, driveStatus = driveStatus,
+                driveWarning = driveWarning, showCloudMenu = showCloudMenu,
+                onCreate = onCreate, onImport = onImport, onDrive = onDrive,
+                onShowCloudMenu = onShowCloudMenu,
+                onDismissCloudMenu = onDismissCloudMenu,
+                onDisconnect = onDisconnect,
+            )
+        }
+    }
+}
+
+/**
+ * Compact right-hand controls: one 48dp Drive row, followed by a pair of
+ * global playlist actions if playlists exist. The Drive status stays beside
+ * its controls; no independent full-width card consumes the list area.
+ */
+@Composable
+internal fun MusicPlaylistToolbar(
+    modifier: Modifier, enabled: Boolean, hasPlaylists: Boolean,
+    cloudLinked: Boolean, driveStatus: String, driveWarning: Boolean,
+    showCloudMenu: Boolean, onCreate: () -> Unit, onImport: () -> Unit,
+    onDrive: () -> Unit, onShowCloudMenu: () -> Unit,
+    onDismissCloudMenu: () -> Unit, onDisconnect: () -> Unit,
+) {
     Surface(
-        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
-        shape = RoundedCornerShape(14.dp),
+        modifier = modifier,
+        shape = RoundedCornerShape(12.dp),
         color = MusicPalette.surface,
         border = BorderStroke(1.dp, MusicPalette.border.copy(alpha = 0.7f)),
     ) {
         BoxWithConstraints {
-            val showCloudIcon = maxWidth >= 300.dp
-            Column {
+            // The full name is retained when it fits. On narrow/linked phones
+            // the visible label is shorter, while TalkBack always reads both.
+            val shortDriveLabel = maxWidth < 160.dp ||
+                (cloudLinked && maxWidth < 185.dp)
+            Column(Modifier.fillMaxWidth()) {
                 Row(
-                    Modifier.fillMaxWidth().heightIn(min = 54.dp)
-                        .padding(start = 12.dp, end = 4.dp),
+                    Modifier.fillMaxWidth()
+                        .heightIn(min = PlaylistUiPresentation.playlistHeaderControlRowHeightDp.dp)
+                        .padding(start = 6.dp, end = 2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (showCloudIcon) {
-                        Icon(Icons.Rounded.Cloud, contentDescription = null,
-                            modifier = Modifier.size(18.dp), tint = MusicPalette.primary)
-                        Spacer(Modifier.width(8.dp))
-                    }
                     Column(
-                        Modifier.weight(1f).padding(vertical = 6.dp)
+                        Modifier.weight(1f).padding(vertical = 4.dp)
                             .semantics(mergeDescendants = true) {
                                 contentDescription = "Google Drive, $driveStatus"
                             },
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                        verticalArrangement = Arrangement.spacedBy(1.dp),
                     ) {
                         Text(
-                            "Google Drive", style = MaterialTheme.typography.labelMedium,
-                            color = MusicPalette.text, maxLines = 1,
+                            if (shortDriveLabel) "Drive" else "Google Drive",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MusicPalette.text,
+                            maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
                             driveStatus,
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (driveWarning) MusicPalette.warning else MusicPalette.muted,
-                            maxLines = 3, overflow = TextOverflow.Ellipsis,
+                            color = if (driveWarning) MusicPalette.warning
+                                else MusicPalette.muted,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                     MusicDriveSyncButton(enabled, cloudLinked, onDrive)
-                    if (cloudLinked) MusicDriveMenuButton(
-                        enabled, showCloudMenu, onShowCloudMenu,
-                        onDismissCloudMenu, onDisconnect)
+                    if (cloudLinked) {
+                        MusicDriveMenuButton(
+                            enabled, showCloudMenu, onShowCloudMenu,
+                            onDismissCloudMenu, onDisconnect,
+                        )
+                    }
                 }
                 if (hasPlaylists) {
                     HorizontalDivider(
@@ -353,20 +388,28 @@ internal fun MusicPlaylistToolbar(
                         color = MusicPalette.border.copy(alpha = 0.55f),
                     )
                     Row(
-                        Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                        Modifier.fillMaxWidth().heightIn(
+                            min = PlaylistUiPresentation.playlistHeaderControlRowHeightDp.dp,
+                        ),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         MusicPlaylistGlobalButton(
-                            "Nuova playlist", Icons.Rounded.Add,
-                            Modifier.weight(1f), enabled, primary = true, onClick = onCreate,
+                            title = "Nuova",
+                            accessibleLabel = "Nuova playlist",
+                            icon = Icons.Rounded.Add,
+                            modifier = Modifier.weight(1f), enabled = enabled,
+                            primary = true, onClick = onCreate,
                         )
                         Box(
                             Modifier.width(1.dp).height(24.dp)
                                 .background(MusicPalette.border.copy(alpha = 0.55f)),
                         )
                         MusicPlaylistGlobalButton(
-                            "Importa", Icons.Rounded.FileDownload,
-                            Modifier.weight(1f), enabled, primary = false, onClick = onImport,
+                            title = "Importa",
+                            accessibleLabel = "Importa playlist",
+                            icon = Icons.Rounded.FileDownload,
+                            modifier = Modifier.weight(1f), enabled = enabled,
+                            primary = false, onClick = onImport,
                         )
                     }
                 }
@@ -409,21 +452,30 @@ private fun MusicDriveMenuButton(
 
 @Composable
 private fun MusicPlaylistGlobalButton(
-    title: String, icon: ImageVector, modifier: Modifier,
+    title: String, accessibleLabel: String, icon: ImageVector, modifier: Modifier,
     enabled: Boolean, primary: Boolean, onClick: () -> Unit,
 ) {
+    val largeFont = LocalDensity.current.fontScale > 1.4f
     TextButton(
-        onClick = onClick, enabled = enabled, modifier = modifier.heightIn(min = 48.dp),
-        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 5.dp),
+        onClick = onClick, enabled = enabled,
+        modifier = modifier.heightIn(
+            min = PlaylistUiPresentation.playlistHeaderControlRowHeightDp.dp,
+        ).semantics { contentDescription = accessibleLabel },
+        contentPadding = PaddingValues(horizontal = 2.dp, vertical = 4.dp),
         colors = ButtonDefaults.textButtonColors(
             contentColor = if (primary) MusicPalette.primary else MusicPalette.muted,
         ),
-        shape = RoundedCornerShape(11.dp),
+        shape = RoundedCornerShape(10.dp),
     ) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(7.dp))
-        Text(title, style = MaterialTheme.typography.labelMedium,
-            maxLines = 2, overflow = TextOverflow.Ellipsis)
+        // Text takes priority over decoration when Android font scaling grows.
+        if (!largeFont) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(3.dp))
+        }
+        Text(
+            title, style = MaterialTheme.typography.labelSmall,
+            maxLines = 2, overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

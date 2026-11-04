@@ -1391,7 +1391,26 @@ private fun OpenMusicApp() {
                     enabled = busy.isEmpty(),
                     onScan = { requestScan() },
                     onQueue = { showQueue = true },
-                ) else MusicPlaylistHeader()
+                ) else MusicPlaylistHeader(
+                    enabled = busy.isEmpty() && localLoaded,
+                    hasPlaylists = playlists.isNotEmpty(),
+                    cloudLinked = cloudLinked,
+                    driveStatus = driveStatus,
+                    driveWarning = cloudConflicts.isNotEmpty() ||
+                        cloudSyncError != null || localSyncStatus.missingCount > 0,
+                    showCloudMenu = showCloudMenu,
+                    onCreate = { createDialog = true },
+                    onImport = {
+                        importer.launch(arrayOf("application/json", "text/plain"))
+                    },
+                    onDrive = { requestDriveAccess() },
+                    onShowCloudMenu = { showCloudMenu = true },
+                    onDismissCloudMenu = { showCloudMenu = false },
+                    onDisconnect = {
+                        showCloudMenu = false
+                        showCloudDisconnect = true
+                    },
+                )
                 if (busy.isNotEmpty()) MusicBusyIndicator(
                     busy, onCancel = if (verifying) ({ analysisJob?.cancel() }) else null,
                 )
@@ -1465,27 +1484,6 @@ private fun OpenMusicApp() {
                         contentPadding = PaddingValues(bottom = 20.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        item {
-                            MusicPlaylistToolbar(
-                                enabled = busy.isEmpty() && localLoaded,
-                                hasPlaylists = playlists.isNotEmpty(),
-                                cloudLinked = cloudLinked, driveStatus = driveStatus,
-                                driveWarning = cloudConflicts.isNotEmpty() ||
-                                    cloudSyncError != null || localSyncStatus.missingCount > 0,
-                                showCloudMenu = showCloudMenu,
-                                onCreate = { createDialog = true },
-                                onImport = {
-                                    importer.launch(arrayOf("application/json", "text/plain"))
-                                },
-                                onDrive = { requestDriveAccess() },
-                                onShowCloudMenu = { showCloudMenu = true },
-                                onDismissCloudMenu = { showCloudMenu = false },
-                                onDisconnect = {
-                                    showCloudMenu = false
-                                    showCloudDisconnect = true
-                                },
-                            )
-                        }
 
                         if (playlists.isNotEmpty()) {
                             item {
