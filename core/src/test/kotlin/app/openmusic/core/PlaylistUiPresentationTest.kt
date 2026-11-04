@@ -51,4 +51,20 @@ class PlaylistUiPresentationTest {
         assertEquals(216f, narrow.sliderWidthDp, 0.001f)
         assertEquals(0f, PlaylistUiPresentation.miniSeekGeometry(28f).sliderWidthDp - 4f, 0.001f)
     }
+
+    @Test fun selectorAlwaysRendersOneRowForAnyNonEmptyPlaylistCollection() {
+        assertEquals(0, PlaylistUiPresentation.selectorTabCount(0))
+        assertEquals(1, PlaylistUiPresentation.selectorTabCount(1))
+        assertEquals(1, PlaylistUiPresentation.selectorTabCount(2))
+        assertEquals(1, PlaylistUiPresentation.selectorTabCount(25))
+        assertFalse(PlaylistUiPresentation.canChooseOtherPlaylist(1))
+        assertTrue(PlaylistUiPresentation.canChooseOtherPlaylist(2))
+    }
+
+    @Test fun redundantAvailabilitySummaryIsHiddenButExceptionsRemainAccessible() {
+        assertFalse(PlaylistUiPresentation.needsExceptionSummary(0, 0))
+        assertTrue(PlaylistUiPresentation.needsExceptionSummary(1, 0))
+        assertTrue(PlaylistUiPresentation.needsExceptionSummary(0, 1))
+        assertTrue(PlaylistUiPresentation.needsExceptionSummary(3, 5))
+    }
 }
