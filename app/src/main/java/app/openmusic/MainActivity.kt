@@ -107,6 +107,8 @@ private fun OpenMusicApp() {
     var pickerPlaylistId by remember { mutableStateOf<String?>(null) }
     var pickerQuery by remember { mutableStateOf("") }
     var pickerSelectedUris by remember { mutableStateOf(emptySet<String>()) }
+    var pickerBaseline by remember { mutableStateOf(emptyMap<String, Set<String>>()) }
+    var pickerBaseUpdatedAt by remember { mutableStateOf<String?>(null) }
     var pickerSaving by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf("") }
     var localLoaded by remember { mutableStateOf(false) }
@@ -120,8 +122,9 @@ private fun OpenMusicApp() {
     var cloudConflicts by remember { mutableStateOf(emptyList<CloudConflict>()) }
     var showCloudDisconnect by remember { mutableStateOf(false) }
     var createDialog by remember { mutableStateOf(false) }
-    var showDeleteChooser by remember { mutableStateOf(false) }
     var deleteConfirmId by remember { mutableStateOf<String?>(null) }
+    var renameDialogId by remember { mutableStateOf<String?>(null) }
+    var proposedRename by remember { mutableStateOf("") }
     var showQueuePicker by remember { mutableStateOf(false) }
     var queuePickSource by remember { mutableIntStateOf(0) }
     var queuePickPlaylistId by remember { mutableStateOf<String?>(null) }
@@ -524,10 +527,18 @@ private fun OpenMusicApp() {
 
     fun openPicker(listId: String) {
         if (busy.isNotEmpty() || !localLoaded) return
-        if (playlists.none { it.playlistId == listId }) return
+        val target = playlists.firstOrNull { it.playlistId == listId } ?: return
+        val present = audioFiles.map { it.uri }.toSet()
+        // Only EXACT identities have a verified membership. Missing and ambiguous
+        // imported entries remain untouched, whether or not visible in the editor.
+        val verified = PlaylistContentEditor.baseline(
+            resolvedMatches[listId].orEmpty(), present,
+        )
         pickerPlaylistId = listId
+        pickerBaseUpdatedAt = target.updatedAt
+        pickerBaseline = verified
         pickerQuery = ""
-        pickerSelectedUris = emptySet()
+        pickerSelectedUris = verified.keys
     }
 
     fun closePicker() {
@@ -535,64 +546,81 @@ private fun OpenMusicApp() {
         pickerPlaylistId = null
         pickerQuery = ""
         pickerSelectedUris = emptySet()
+        pickerBaseline = emptyMap()
+        pickerBaseUpdatedAt = null
     }
 
     fun confirmPicker() {
         val listId = pickerPlaylistId ?: return
-        if (pickerSaving || busy.isNotEmpty() || pickerSelectedUris.isEmpty()) return
-        val chosen = pickerSelectedUris
-        // Only use the indexed local music category; no external SAF or file pickers.
-        val songs = audioFiles.filter {
-            it.uri in chosen &&
-                AudioClassification.isMusic(it.isMusic, it.stamp(), manualKinds)
+        if (pickerSaving || busy.isNotEmpty()) return
+        val pending = PlaylistContentEditor.pending(pickerBaseline, pickerSelectedUris)
+        if (!pending.hasChanges) return
+        val savedVersion = pickerBaseUpdatedAt
+        // MediaStore order determines append order, regardless of search/filter order.
+        val songs = audioFiles.filter { it.uri in pending.addedUris }
+        if (songs.size != pending.addedUris.size) {
+            notifyUser("Il catalogo audio è cambiato: riapri l'editor")
+            return
         }
-        if (songs.isEmpty()) { notifyUser("Nessun brano musicale selezionato"); return }
         pickerSaving = true
-        busy = "Verifica dei brani selezionati"
+        busy = "Verifica e salvataggio della playlist"
         scope.launch {
             try {
-                // Resolve every SHA-256 before any playlist write, so a failed read is atomic.
+                // Hash all additions before entering the atomic write. Failure here
+                // cannot accidentally commit the requested removals.
                 val verified = songs.map { file -> file to hashCache.sha256(file) }
                 hashCache.flush()
                 playlistWriteMutex.withLock {
                     val current = playlists.firstOrNull { it.playlistId == listId }
                         ?: throw IllegalStateException("Playlist non trovata")
+                    if (current.updatedAt != savedVersion) {
+                        throw IllegalStateException("Playlist modificata durante l'editing: riapri")
+                    }
                     val entries = verified.map { (file, hash) ->
                         PlaylistEntry(UUID.randomUUID().toString(), file.asCopy(hash).identity)
                     }
-                    val result = PlaylistBulkAdd.add(current, entries, Instant.now().toString())
-                    val saved = result.inserted == 0 || persist(playlists.map {
+                    val result = PlaylistContentEditor.apply(
+                        current, pending.removedEntryIds, entries, Instant.now().toString(),
+                    )
+                    val saved = result.playlist == current || persist(playlists.map {
                         if (it.playlistId == listId) result.playlist else it
                     })
                     if (saved) {
-                        if (result.inserted > 0) {
+                        if (result.added > 0) {
                             verified.forEach { (file, hash) ->
                                 localCopies = VerifiedCopies.upsert(localCopies, file.asCopy(hash))
                             }
+                        }
+                        if (result.added > 0 || result.removed > 0) {
                             refreshMatches(playlists, localCopies)
                         }
                         selectedId = listId
                         tab = 1
                         pickerPlaylistId = null
                         pickerSelectedUris = emptySet()
+                        pickerBaseline = emptyMap()
+                        pickerBaseUpdatedAt = null
                         pickerQuery = ""
                         notifyUser(
-                            if (result.inserted == 0) "Brani già presenti nella playlist"
-                            else result.inserted.toString() + " brani aggiunti a " + current.name +
-                                if (cloudLinked) " · sincronizza Drive" else ""
+                            "+" + result.added + " / -" + result.removed +
+                                " brani · " + current.name +
+                                if (cloudLinked && result.playlist != current)
+                                    " · sincronizza Drive" else ""
                         )
                     }
                 }
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (failure: Exception) {
-                notifyUser("Aggiunta non riuscita: " + (failure.localizedMessage ?: "errore"))
+                notifyUser("Modifiche non salvate: " +
+                    (failure.localizedMessage ?: "errore"))
             } finally {
                 pickerSaving = false
                 busy = ""
             }
         }
     }
+
 
     fun requestAddToPlaylist(file: AudioFile) {
         if (busy.isNotEmpty()) return
@@ -748,9 +776,7 @@ private fun OpenMusicApp() {
                 val victim = playlists.firstOrNull { it.playlistId == id }
                     ?: return@withLock
                 try {
-                    val state = withContext(Dispatchers.IO) {
-                        storage.deletePlaylist(id)
-                    }
+                    val state = withContext(Dispatchers.IO) { storage.deletePlaylist(id) }
                     val remaining = state.playlists
                     deletedIds = state.deleted.map { it.playlistId }.toSet()
                     playlists = remaining
@@ -766,6 +792,34 @@ private fun OpenMusicApp() {
             }
         }
     }
+
+    fun renamePlaylist(id: String, proposed: String) {
+        if (busy.isNotEmpty() || !localLoaded) return
+        scope.launch {
+            playlistWriteMutex.withLock {
+                try {
+                    val current = playlists.firstOrNull { it.playlistId == id }
+                        ?: throw IllegalStateException("Playlist non trovata")
+                    val renamed = PlaylistNameEditor.rename(
+                        current, playlists, proposed, Instant.now().toString(),
+                    )
+                    if (renamed == current || persist(playlists.map {
+                            if (it.playlistId == id) renamed else it
+                        })) {
+                        renameDialogId = null
+                        proposedRename = ""
+                        notifyUser(if (renamed == current) "Nome invariato"
+                            else "Playlist rinominata" +
+                                if (cloudLinked) " · sincronizza Drive" else "")
+                    }
+                } catch (failure: Exception) {
+                    notifyUser("Rinomina non riuscita: " +
+                        (failure.localizedMessage ?: "errore"))
+                }
+            }
+        }
+    }
+
 
     LaunchedEffect(Unit) {
         try {
@@ -896,34 +950,7 @@ private fun OpenMusicApp() {
     }
 
 
-    if (showDeleteChooser) {
-        AlertDialog(
-            onDismissRequest = { showDeleteChooser = false },
-            title = { Text("Elimina una playlist") },
-            text = {
-                Column(Modifier.heightIn(max = 350.dp).verticalScroll(rememberScrollState())) {
-                    playlists.forEach { list ->
-                        TextButton(
-                            onClick = {
-                                showDeleteChooser = false
-                                deleteConfirmId = list.playlistId
-                            },
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                        ) {
-                            Text(list.name + " · " + list.tracks.size + " brani",
-                                modifier = Modifier.weight(1f), maxLines = 1,
-                                overflow = TextOverflow.Ellipsis)
-                            Icon(Icons.Rounded.ChevronRight, contentDescription = null)
-                        }
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { showDeleteChooser = false }) { Text("Annulla") }
-            },
-        )
-    }
+    // Deletion is available only from the active playlist tab.
     deleteConfirmId?.let { id ->
         val target = playlists.firstOrNull { it.playlistId == id }
         AlertDialog(
@@ -944,6 +971,53 @@ private fun OpenMusicApp() {
                 TextButton(onClick = { deleteConfirmId = null }) { Text("Annulla") }
             },
         )
+    }
+
+    renameDialogId?.let { id ->
+        val target = playlists.firstOrNull { it.playlistId == id }
+        if (target != null) {
+            val validationError = runCatching {
+                PlaylistNameEditor.rename(target, playlists,
+                    proposedRename, target.updatedAt)
+            }.exceptionOrNull()?.localizedMessage
+            AlertDialog(
+                onDismissRequest = { renameDialogId = null; proposedRename = "" },
+                title = { Text("Rinomina playlist") },
+                text = {
+                    Column {
+                        Text("Nome attuale: " + target.name,
+                            color = MusicPalette.muted,
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Spacer(Modifier.height(10.dp))
+                        OutlinedTextField(
+                            value = proposedRename,
+                            onValueChange = { proposedRename = it },
+                            label = { Text("Nuovo nome") },
+                            singleLine = true,
+                            isError = validationError != null,
+                            supportingText = {
+                                if (validationError != null)
+                                    Text(validationError, color = MaterialTheme.colorScheme.error)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = { renamePlaylist(id, proposedRename) },
+                        enabled = validationError == null && busy.isEmpty(),
+                    ) { Text("Salva") }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        renameDialogId = null
+                        proposedRename = ""
+                    }) { Text("Annulla") }
+                },
+            )
+        }
     }
 
     if (createDialog) {
@@ -1202,8 +1276,13 @@ private fun OpenMusicApp() {
     val musicCount = remember(audioFiles, manualKinds) {
         audioFiles.count { AudioClassification.isMusic(it.isMusic, it.stamp(), manualKinds) }
     }
-    val musicCatalog = remember(audioFiles, manualKinds) {
-        audioFiles.filter { AudioClassification.isMusic(it.isMusic, it.stamp(), manualKinds) }
+    // Already verified playlist entries remain editable even when classified as
+    // Altri audio; ordinary new candidates still come from the Music category.
+    val editorCatalog = remember(audioFiles, manualKinds, pickerBaseline) {
+        audioFiles.filter {
+            AudioClassification.isMusic(it.isMusic, it.stamp(), manualKinds) ||
+                it.uri in pickerBaseline
+        }
     }
     val visibleAudio = remember(audioFiles, manualKinds, onlyMusic) {
         audioFiles.filter {
@@ -1261,9 +1340,12 @@ private fun OpenMusicApp() {
         if (pickerPlaylistId != null) {
             val target = playlists.firstOrNull { it.playlistId == pickerPlaylistId }
             if (target != null) {
+                val pending = PlaylistContentEditor.pending(pickerBaseline, pickerSelectedUris)
                 MusicPlaylistAddPicker(
-                    playlistName = target.name, candidates = musicCatalog,
-                    selectedUris = pickerSelectedUris, query = pickerQuery,
+                    playlistName = target.name, candidates = editorCatalog,
+                    selectedUris = pickerSelectedUris, baselineUris = pickerBaseline.keys,
+                    additions = pending.addedUris.size, removals = pending.removalCount,
+                    query = pickerQuery,
                     saving = pickerSaving, onQuery = { pickerQuery = it },
                     onToggle = { pickerSelectedUris = PlaylistBulkAdd.toggle(pickerSelectedUris, it) },
                     onCancel = { closePicker() }, onConfirm = { confirmPicker() },
@@ -1310,12 +1392,7 @@ private fun OpenMusicApp() {
                     enabled = busy.isEmpty(),
                     onScan = { requestScan() },
                     onQueue = { showQueue = true },
-                ) else MusicPlaylistHeader(
-                    enabled = busy.isEmpty(), canDelete = playlists.isNotEmpty(),
-                    onCreate = { createDialog = true },
-                    onImport = { importer.launch(arrayOf("application/json", "text/plain")) },
-                    onDelete = { showDeleteChooser = true },
-                )
+                ) else MusicPlaylistHeader()
                 if (busy.isNotEmpty()) MusicBusyIndicator(
                     busy, onCancel = if (verifying) ({ analysisJob?.cancel() }) else null,
                 )
@@ -1390,91 +1467,53 @@ private fun OpenMusicApp() {
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         item {
-                            Surface(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(16.dp),
-                                color = MusicPalette.surface,
-                                border = androidx.compose.foundation.BorderStroke(
-                                    1.dp, MusicPalette.border.copy(alpha = 0.65f),
-                                ),
-                            ) {
-                                Row(
-                                    Modifier.fillMaxWidth().padding(
-                                        start = 12.dp, end = 12.dp, top = 8.dp, bottom = 8.dp,
-                                    ),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Icon(
-                                        androidx.compose.material.icons.Icons.Rounded.Cloud,
-                                        contentDescription = null,
-                                        tint = MusicPalette.primary,
-                                        modifier = Modifier.size(24.dp),
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    Column(Modifier.weight(1f),
-                                        verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                        Text(
-                                            "Google Drive",
-                                            style = MaterialTheme.typography.titleSmall,
-                                            maxLines = 1,
-                                        )
-                                        Text(
-                                            driveStatus,
-                                            color = if (cloudSyncError != null ||
-                                                localSyncStatus.missingCount > 0)
-                                                MusicPalette.warning else MusicPalette.muted,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            maxLines = 2, overflow = TextOverflow.Ellipsis,
-                                        )
-                                    }
-                                    TextButton(
-                                        onClick = { requestDriveAccess() },
-                                        enabled = busy.isEmpty() && localLoaded,
-                                        modifier = Modifier.heightIn(min = 48.dp),
-                                        contentPadding = PaddingValues(horizontal = 5.dp),
-                                    ) {
-                                        Icon(
-                                            androidx.compose.material.icons.Icons.Rounded.Sync,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(19.dp),
-                                        )
-                                        Spacer(Modifier.width(4.dp))
-                                        Text(if (cloudLinked) "Sincronizza" else "Collega",
-                                            style = MaterialTheme.typography.labelLarge)
-                                    }
-                                    if (cloudLinked) {
-                                        Box {
-                                            IconButton(
-                                                onClick = { showCloudMenu = true },
-                                                enabled = busy.isEmpty(),
-                                            ) {
-                                                Icon(
-                                                    androidx.compose.material.icons.Icons.Rounded.MoreVert,
-                                                    contentDescription = "Opzioni Google Drive",
-                                                )
-                                            }
-                                            DropdownMenu(
-                                                expanded = showCloudMenu,
-                                                onDismissRequest = { showCloudMenu = false },
-                                            ) {
-                                                DropdownMenuItem(
-                                                    text = { Text("Scollega Drive") },
-                                                    onClick = {
-                                                        showCloudMenu = false
-                                                        showCloudDisconnect = true
-                                                    },
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                            MusicPlaylistToolbar(
+                                enabled = busy.isEmpty() && localLoaded,
+                                hasPlaylists = playlists.isNotEmpty(),
+                                cloudLinked = cloudLinked, driveStatus = driveStatus,
+                                driveWarning = cloudSyncError != null ||
+                                    localSyncStatus.missingCount > 0,
+                                showCloudMenu = showCloudMenu,
+                                onCreate = { createDialog = true },
+                                onImport = {
+                                    importer.launch(arrayOf("application/json", "text/plain"))
+                                },
+                                onDrive = { requestDriveAccess() },
+                                onShowCloudMenu = { showCloudMenu = true },
+                                onDismissCloudMenu = { showCloudMenu = false },
+                                onDisconnect = {
+                                    showCloudMenu = false
+                                    showCloudDisconnect = true
+                                },
+                            )
                         }
+
                         if (playlists.isNotEmpty()) {
                             item {
                                 MusicPlaylistNavigation(
                                     playlists = playlists, selectedId = currentSelectedId,
+                                    busy = busy.isNotEmpty(),
                                     onSelect = { selectedId = it },
+                                    onAddTracks = {
+                                        selected?.let { openPicker(it.playlistId) }
+                                    },
+                                    onRelink = { relink() },
+                                    onExport = {
+                                        selected?.let {
+                                            exportPending = it
+                                            exporter.launch(
+                                                it.name.replace(Regex("[^a-zA-Z0-9_-]"), "_") +
+                                                    ".json",
+                                            )
+                                        }
+                                    },
+                                    onRename = {
+                                        selected?.let {
+                                            renameDialogId = it.playlistId
+                                            proposedRename = it.name
+                                        }
+                                    },
+                                    onDelete = { deleteConfirmId = selected?.playlistId },
                                 )
                             }
                         }
@@ -1486,6 +1525,10 @@ private fun OpenMusicApp() {
                                     icon = androidx.compose.material.icons.Icons.Rounded.PlaylistPlay,
                                     buttonLabel = "Crea playlist",
                                     onAction = { createDialog = true },
+                                    secondaryButtonLabel = "Importa playlist",
+                                    onSecondaryAction = {
+                                        importer.launch(arrayOf("application/json", "text/plain"))
+                                    },
                                 )
                             }
                         } else {
@@ -1497,20 +1540,10 @@ private fun OpenMusicApp() {
                             } else emptyList()
                             item {
                                 MusicPlaylistSummary(
-                                    name = selected.name, trackCount = selected.tracks.size,
-                                    available = available, busy = busy.isNotEmpty(),
-                                    analyzing = verifying,
+                                    trackCount = selected.tracks.size,
+                                    available = available, analyzing = verifying,
                                     needsVerification = !verificationComplete && !verifying,
-                                    unreadableCount = unreadableCount,
-                                    missingTitles = missingTitles,
-                                    onRelink = { relink() },
-                                    onAddTracks = { openPicker(selected.playlistId) },
-                                    onExport = {
-                                        exportPending = selected
-                                        exporter.launch(
-                                            selected.name.replace(Regex("[^a-zA-Z0-9_-]"), "_") + ".json",
-                                        )
-                                    },
+                                    unreadableCount = unreadableCount, missingTitles = missingTitles,
                                 )
                             }
                             if (latestAnalysis.isNotEmpty()) item {
