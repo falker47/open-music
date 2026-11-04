@@ -34,14 +34,21 @@ class PlaylistUiPresentationTest {
         assertTrue(3f * 48f + 2f * PlaylistUiPresentation.topControlGapDp(260f) <= 260f)
     }
 
-    @Test fun miniSeekVisibleTrackSharesArtworkAndNextButtonEdges() {
+    @Test fun miniSeekTrackAndTimestampsShareRealArtworkAndNextInsets() {
+        // The mini-player row and Slider share the same deliberate 14dp
+        // inset; a 4dp Material3 thumb adds 2dp inside each Slider edge.
+        assertEquals(14f, PlaylistUiPresentation.miniPlayerInsetDp, 0.001f)
         val normal = PlaylistUiPresentation.miniSeekGeometry(340f)
-        assertEquals(9f, normal.visibleStartDp, 0.001f)
-        assertEquals(335f, normal.visibleEndDp, 0.001f)
-        assertEquals(7f, normal.sliderStartDp, 0.001f)
-        assertEquals(330f, normal.sliderWidthDp, 0.001f)
+        assertEquals(14f, normal.visibleStartDp, 0.001f)
+        assertEquals(326f, normal.visibleEndDp, 0.001f)
+        assertEquals(12f, normal.sliderStartDp, 0.001f)
+        assertEquals(316f, normal.sliderWidthDp, 0.001f)
+
         val narrow = PlaylistUiPresentation.miniSeekGeometry(240f)
-        assertEquals(9f, narrow.visibleStartDp, 0.001f)
-        assertEquals(235f, narrow.visibleEndDp, 0.001f)
+        assertEquals(14f, narrow.visibleStartDp, 0.001f)
+        assertEquals(226f, narrow.visibleEndDp, 0.001f)
+        assertEquals(12f, narrow.sliderStartDp, 0.001f)
+        assertEquals(216f, narrow.sliderWidthDp, 0.001f)
+        assertEquals(0f, PlaylistUiPresentation.miniSeekGeometry(28f).sliderWidthDp - 4f, 0.001f)
     }
 }
