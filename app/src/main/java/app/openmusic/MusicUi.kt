@@ -237,7 +237,7 @@ internal fun MusicArt(
 @Composable
 internal fun MusicBrandIdentity(modifier: Modifier = Modifier) {
     Image(
-        painter = painterResource(R.drawable.open_music_wordmark),
+        painter = painterResource(R.drawable.open_music_wordmark_vector),
         contentDescription = "Open Music",
         modifier = modifier.height(40.dp),
         contentScale = ContentScale.Fit,
