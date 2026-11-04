@@ -55,15 +55,19 @@ object PlaylistUiPresentation {
     const val playlistHeaderButtonSizeDp = 48f
     const val playlistHeaderSyncGlyphSizeDp = 21f
     const val playlistHeaderMenuGlyphSizeDp = 24f
-    /** Keep the menu's position fixed and reserve its 48dp slot while disconnected. */
-    fun playlistHeaderSyncButtonCenterXDp(cardWidthDp: Float): Float =
-        cardWidthDp - playlistHeaderButtonSizeDp * 1.5f
+    /** Controls fill from the right. Before linking, Sync occupies the menu's slot. */
+    fun playlistHeaderSyncButtonCenterXDp(cardWidthDp: Float, linked: Boolean): Float =
+        if (linked) cardWidthDp - playlistHeaderButtonSizeDp * 1.5f
+        else playlistHeaderMenuButtonCenterXDp(cardWidthDp)
     fun playlistHeaderMenuButtonCenterXDp(cardWidthDp: Float): Float =
         cardWidthDp - playlistHeaderButtonSizeDp / 2f
     /** Preserve the earlier request for roughly half the free gap between glyphs. */
     const val playlistHeaderSyncGlyphOffsetDp =
         (playlistHeaderButtonSizeDp -
             (playlistHeaderSyncGlyphSizeDp + playlistHeaderMenuGlyphSizeDp) / 2f) / 2f
+    /** No translation when Sync is the rightmost button: it centers on the menu's x. */
+    fun playlistHeaderSyncOffsetDp(linked: Boolean): Float =
+        if (linked) playlistHeaderSyncGlyphOffsetDp else 0f
     fun playlistHeaderMinPanelHeightDp(): Float = playlistHeaderTouchHeightDp
 
     /** Offline create/import are contextual playlist actions, not Drive actions. */

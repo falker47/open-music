@@ -106,13 +106,17 @@ class PlaylistUiPresentationTest {
         val gapAfter = oldClearGap - ui.playlistHeaderSyncGlyphOffsetDp
         assertEquals(oldClearGap / 2f, gapAfter, 0.001f)
         assertTrue(ui.playlistHeaderSyncGlyphOffsetDp < 24f)
-        // Menu stays at its approved x. The same reserved slot is present offline.
+        // Controls fill from right to left; only the linked state has the menu.
         for (width in listOf(142f, 186f, 280f)) {
-            assertEquals(width - 24f, ui.playlistHeaderMenuButtonCenterXDp(width), 0.001f)
-            assertEquals(width - 72f, ui.playlistHeaderSyncButtonCenterXDp(width), 0.001f)
-            assertEquals(48f,
-                ui.playlistHeaderMenuButtonCenterXDp(width) -
-                    ui.playlistHeaderSyncButtonCenterXDp(width), 0.001f)
+            val menuX = ui.playlistHeaderMenuButtonCenterXDp(width)
+            val disconnectedSyncX = ui.playlistHeaderSyncButtonCenterXDp(width, linked = false)
+            val connectedSyncX = ui.playlistHeaderSyncButtonCenterXDp(width, linked = true)
+            assertEquals(width - 24f, menuX, 0.001f)
+            assertEquals(menuX, disconnectedSyncX, 0.001f)
+            assertEquals(menuX - 48f, connectedSyncX, 0.001f)
+            assertEquals(0f, ui.playlistHeaderSyncOffsetDp(linked = false), 0.001f)
+            assertEquals(ui.playlistHeaderSyncGlyphOffsetDp,
+                ui.playlistHeaderSyncOffsetDp(linked = true), 0.001f)
         }
     }
 

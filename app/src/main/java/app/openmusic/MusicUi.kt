@@ -400,8 +400,6 @@ private fun MusicPlaylistDriveCard(
                     onDismissCloudMenu, onDisconnect,
                     onBackupAudio, onRestoreAudio,
                 )
-            } else {
-                Spacer(Modifier.size(PlaylistUiPresentation.playlistHeaderButtonSizeDp.dp))
             }
         }
     }
@@ -431,7 +429,7 @@ private fun MusicDriveSyncButton(
                 else "Collega Google Drive",
             tint = MusicPalette.primary,
             modifier = Modifier.size(21.dp)
-                .offset(x = PlaylistUiPresentation.playlistHeaderSyncGlyphOffsetDp.dp),
+                .offset(x = PlaylistUiPresentation.playlistHeaderSyncOffsetDp(linked).dp),
         )
     }
 }

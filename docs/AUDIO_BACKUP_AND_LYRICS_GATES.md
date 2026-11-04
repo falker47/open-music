@@ -7,12 +7,15 @@ This is a code-level implementation, **not** a claim of real device QA.
 
 - Preserve the approved top edge and panel width. Increase the previous
   31.28 dp visual height by exactly 15% (~35.97 dp); all growth is downward.
-- Change the left inset to 12 dp. Keep a 48 dp slot reserved for the overflow
-  menu in both linked and disconnected states, so Sync cannot jump to the
-  right edge when the menu is hidden.
-- Keep the menu glyph x fixed and recenter the row on the visual card center.
-  Sync stays within its independent 48 dp touch target. The full Drive status
-  is available by tapping the summary if it truncates on narrow screens.
+- Keep the approved 12 dp left inset, vertical alignment and visual height.
+  The controls flow right-to-left: while disconnected the Connect/Sync button
+  occupies the rightmost 48 dp slot (same center as the eventual overflow menu);
+  after linking, Sync moves one 48 dp slot LEFT and ⋮ occupies the rightmost
+  slot. No hidden placeholder pushes the disconnected button left.
+- Keep the linked menu glyph x fixed and preserve linked-state icon spacing
+  exactly as previously approved; remove the extra Sync glyph offset only
+  while disconnected. The full Drive status remains accessible by tapping
+  the summary when the label truncates.
 - Cloud glyph and semantic status colors remain. Actual rendered margins,
   fonts, Touch and TalkBack require Android QA.
 
