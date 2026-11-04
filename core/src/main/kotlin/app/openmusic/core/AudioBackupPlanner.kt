@@ -83,10 +83,20 @@ object AudioBackupPlanner {
                 file.name in names -> {
                     val suffix = " (" + file.sha256.take(12) + ")"
                     val baseName = file.name.take(240 - suffix.length)
+                    var candidate = baseName + suffix
+                    var sequence = 1
+                    while (!names.add(candidate)) {
+                        val extra = "-" + sequence++
+                        candidate = file.name.take(240 - suffix.length - extra.length) +
+                            suffix + extra
+                    }
                     AudioBackupDecision(file, AudioBackupDisposition.RENAME_ON_UPLOAD,
-                        baseName + suffix)
+                        candidate)
                 }
-                else -> AudioBackupDecision(file, AudioBackupDisposition.UPLOAD, file.name)
+                else -> {
+                    names.add(file.name)
+                    AudioBackupDecision(file, AudioBackupDisposition.UPLOAD, file.name)
+                }
             }
         }
     }

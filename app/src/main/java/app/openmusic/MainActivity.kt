@@ -84,7 +84,6 @@ private fun OpenMusicApp() {
     val cloudJournal = remember { CloudJournalStorage(context.applicationContext) }
     val artworkCache = remember { LocalArtworkCache() }
     val hashCache = remember { MediaHashCache(context.applicationContext) }
-    val localLyrics = remember { LocalLyricsStorage(context.applicationContext) }
     val playlistWriteMutex = remember { Mutex() }
     val kindWriteMutex = remember { Mutex() }
     // The playback engine lives in PlaybackService; this UI only holds a controller.
@@ -150,17 +149,6 @@ private fun OpenMusicApp() {
     var duration by remember { mutableLongStateOf(0L) }
     var currentUri by remember { mutableStateOf<Uri?>(null) }
     var showNowPlaying by rememberSaveable { mutableStateOf(false) }
-    // Result is keyed by the local source; stale text is never shown for the next song.
-    var lyricsForSource by remember { mutableStateOf<Pair<String, LyricsUiState>?>(null) }
-    var lyricsImportTarget by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(currentUri?.toString()) {
-        val source = currentUri?.toString().orEmpty()
-        lyricsForSource = if (source.isBlank()) null else source to LyricsUiState.Loading
-        if (source.isNotBlank()) {
-            val loaded = withContext(Dispatchers.IO) { localLyrics.load(source) }
-            lyricsForSource = source to loaded
-        }
-    }
     val currentSelectedId = PlaylistSelection.resolveId(playlists, selectedId)
     val selected = playlists.firstOrNull { it.playlistId == currentSelectedId }
     val matches = resolvedMatches[currentSelectedId].orEmpty()
@@ -170,6 +158,8 @@ private fun OpenMusicApp() {
     fun notifyUser(message: String) {
         scope.launch { snackbar.showSnackbar(message) }
     }
+
+    val audioBackup = rememberAudioBackupActions { message -> notifyUser(message) }
 
     fun persist(updated: List<PortablePlaylist>): Boolean {
         return try {
@@ -431,22 +421,6 @@ private fun OpenMusicApp() {
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (granted) scan() else notifyUser("Consenti l'accesso alla musica per leggere la libreria")
-    }
-
-    val lyricsPicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument(),
-    ) { document ->
-        val source = lyricsImportTarget
-        lyricsImportTarget = null
-        if (document != null && source != null) {
-            scope.launch {
-                val loaded = withContext(Dispatchers.IO) {
-                    runCatching { localLyrics.importDocument(source, document) }.getOrNull()
-                }
-                if (loaded == null) notifyUser("Impossibile leggere il testo: scegli un file .txt o .lrc")
-                else if (currentUri?.toString() == source) lyricsForSource = source to loaded
-            }
-        }
     }
 
     fun requestScan() {
@@ -1407,15 +1381,6 @@ private fun OpenMusicApp() {
                     }
                 },
                 onOpenQueue = { showQueue = true },
-                lyrics = lyricsForSource?.takeIf {
-                    it.first == currentUri?.toString()
-                }?.second ?: LyricsUiState.Loading,
-                onImportLyrics = {
-                    currentUri?.toString()?.let { source ->
-                        lyricsImportTarget = source
-                        lyricsPicker.launch(arrayOf("*/*"))
-                    }
-                },
             )
         } else {
             Column(
@@ -1426,13 +1391,15 @@ private fun OpenMusicApp() {
                     onScan = { requestScan() },
                     onQueue = { showQueue = true },
                 ) else MusicPlaylistHeader(
-                    enabled = busy.isEmpty() && localLoaded,
+                    enabled = busy.isEmpty() && localLoaded && !audioBackup.busy,
                     cloudLinked = cloudLinked,
                     driveStatus = driveStatus,
                     showCloudMenu = showCloudMenu,
                     onDrive = { requestDriveAccess() },
                     onShowCloudMenu = { showCloudMenu = true },
                     onDismissCloudMenu = { showCloudMenu = false },
+                    onBackupAudio = audioBackup.onSelectForBackup,
+                    onRestoreAudio = audioBackup.onBrowseRestores,
                     onDisconnect = {
                         showCloudMenu = false
                         showCloudDisconnect = true

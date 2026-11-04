@@ -57,6 +57,61 @@ internal class DriveAudioBackupGateway(private val accessToken: String) {
         return out.toString(Charsets.UTF_8.name())
     }
 
+    /** Drive's opaque permission ID provides an account guard without email access. */
+    fun accountMarker(): String {
+        val connection = connect(
+            "https://www.googleapis.com/drive/v3/about?fields=user(permissionId)", "GET")
+        try {
+            val marker = JSONObject(readSuccess(connection))
+                .getJSONObject("user").getString("permissionId")
+            require(marker.isNotBlank()) { "Drive user identity unavailable" }
+            return marker
+        } finally { connection.disconnect() }
+    }
+
+    /**
+     * The folder is created by this app, so drive.file may list only our
+     * own uploads. Any file lacking a valid content hash is never restored.
+     */
+    fun listBackedUpFiles(folderId: String): List<AudioBackupFile> {
+        require(folderId.isNotBlank())
+        val result = mutableListOf<AudioBackupFile>()
+        var page: String? = null
+        do {
+            val query = "'" + folderId.replace("'", "\\'") +
+                "' in parents and trashed = false"
+            val args = mutableListOf(
+                "q=" + encode(query),
+                "pageSize=1000",
+                "fields=" + encode("nextPageToken,files(id,name,size,mimeType,appProperties)")
+            )
+            if (page != null) args.add("pageToken=" + encode(page!!))
+            val connection = connect(fileBase + "?" + args.joinToString("&"), "GET")
+            val json = try { JSONObject(readSuccess(connection)) }
+                finally { connection.disconnect() }
+            val files = json.getJSONArray("files")
+            for (i in 0 until files.length()) {
+                val entry = files.getJSONObject(i)
+                val sha = entry.optJSONObject("appProperties")
+                    ?.optString("openMusicSha256").orEmpty()
+                if (!sha.matches(Regex("^[a-f0-9]{64}$"))) continue
+                val size = entry.optString("size").toLongOrNull() ?: continue
+                if (size < 0) continue
+                result.add(AudioBackupFile(
+                    name = entry.getString("name"),
+                    sha256 = sha,
+                    sizeBytes = size,
+                    mimeType = entry.optString("mimeType").takeIf { it.isNotBlank() }
+                        ?: "application/octet-stream",
+                    remoteFileId = entry.getString("id"),
+                ))
+                if (result.size > 50_000) throw IOException("Backup inventory too large")
+            }
+            page = json.optString("nextPageToken").takeIf { it.isNotBlank() }
+        } while (page != null)
+        return result
+    }
+
     /** Persist returned ID: never identify a folder by its name alone. */
     fun findOrCreateFolder(previousFolderId: String?): String {
         if (!previousFolderId.isNullOrBlank()) {
@@ -91,6 +146,9 @@ internal class DriveAudioBackupGateway(private val accessToken: String) {
         val body = JSONObject().put("name", file.name)
             .put("parents", org.json.JSONArray().put(folderId))
             .put("mimeType", file.mimeType)
+            .put("appProperties", JSONObject()
+                .put("openMusicSha256", file.sha256)
+                .put("openMusicVersion", "1"))
             .toString().toByteArray(Charsets.UTF_8)
         val connection = connect(
             "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id",

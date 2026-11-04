@@ -89,19 +89,31 @@ class PlaylistUiPresentationTest {
     @Test fun driveCardKeepsTopFixedAndEndsAtOrdinaryGlyphBaseline() {
         val ui = PlaylistUiPresentation
         assertEquals(5f, ui.playlistHeaderVisualTopInsetDp, 0.001f)
-        assertEquals(38f * 293f / 356f, ui.playlistHeaderVisualHeightDp, 0.001f)
-        assertEquals(5f + 38f * 293f / 356f,
+        assertEquals(38f * 293f / 356f * 1.15f,
+            ui.playlistHeaderVisualHeightDp, 0.001f)
+        assertEquals(5f + 38f * 293f / 356f * 1.15f,
             ui.playlistHeaderVisualTopInsetDp + ui.playlistHeaderVisualHeightDp, 0.001f)
         assertTrue(ui.playlistHeaderVisualHeightDp < ui.playlistHeaderWordmarkHeightDp)
+        assertEquals(-1.01f, ui.playlistHeaderRowCenterOffsetDp, 0.1f)
+        assertEquals(12f, ui.playlistHeaderLeftInsetDp, 0.001f)
         assertEquals(48f, ui.playlistHeaderTouchHeightDp, 0.001f)
         assertEquals(48f, ui.playlistHeaderMinPanelHeightDp(), 0.001f)
     }
 
     @Test fun syncGlyphGapHalvesWithoutMovingTheMenuOrItsHitbox() {
+        val ui = PlaylistUiPresentation
         val oldClearGap = 48f - (21f + 24f) / 2f
-        val gapAfter = oldClearGap - PlaylistUiPresentation.playlistHeaderSyncGlyphOffsetDp
+        val gapAfter = oldClearGap - ui.playlistHeaderSyncGlyphOffsetDp
         assertEquals(oldClearGap / 2f, gapAfter, 0.001f)
-        assertTrue(PlaylistUiPresentation.playlistHeaderSyncGlyphOffsetDp < 24f)
+        assertTrue(ui.playlistHeaderSyncGlyphOffsetDp < 24f)
+        // Menu stays at its approved x. The same reserved slot is present offline.
+        for (width in listOf(142f, 186f, 280f)) {
+            assertEquals(width - 24f, ui.playlistHeaderMenuButtonCenterXDp(width), 0.001f)
+            assertEquals(width - 72f, ui.playlistHeaderSyncButtonCenterXDp(width), 0.001f)
+            assertEquals(48f,
+                ui.playlistHeaderMenuButtonCenterXDp(width) -
+                    ui.playlistHeaderSyncButtonCenterXDp(width), 0.001f)
+        }
     }
 
     @Test fun playlistContextMenuHasCreateImportExportRenameDeleteThenRelink() {

@@ -31,6 +31,14 @@ class AudioBackupPlannerTest {
             .single().proposedRemoteName, next.proposedRemoteName)
     }
 
+    @Test fun localNameCollisionsGetDistinctDeterministicDriveNames() {
+        val plan = AudioBackupPlanner.planUpload(
+            listOf(file("same.mp3", "A"), file("same.mp3", "B")), manifest())
+        assertEquals(AudioBackupDisposition.UPLOAD, plan[0].disposition)
+        assertEquals(AudioBackupDisposition.RENAME_ON_UPLOAD, plan[1].disposition)
+        assertNotEquals(plan[0].proposedRemoteName, plan[1].proposedRemoteName)
+    }
+
     @Test fun localDuplicateHashIsOnlyPlannedOnce() {
         val remote = manifest()
         val plan = AudioBackupPlanner.planUpload(

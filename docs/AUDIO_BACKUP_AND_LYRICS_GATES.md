@@ -1,56 +1,64 @@
-# Audio backup & lyrics — gated implementation (4 November 2026)
+# Android QA gate: Drive card, manual audio backup, licensed lyrics
 
-This file documents code delivered on feature branch feat/android-local-player-mvp.
-It does not claim working device OAuth, live audio transfer or licensed
-third-party lyrics presentation.
+Updated 4 November 2026, on the existing feat/android-local-player-mvp branch.
+This is a code-level implementation, **not** a claim of real device QA.
 
-## Audio backup — isolated from playlist metadata
+## Drive card corrective pass
 
-- The existing metadata sync continues to use drive.appdata and playlist JSON v1.
-  No local paths, URI strings, OAuth tokens or audio bytes enter playlist exports.
-- AudioBackupPlanner is pure Kotlin: validates a versioned backup manifest,
-  account marker and stable folder ID; deduplicates by SHA-256, checks name
-  collisions, tracks confirmed offsets and verifies downloaded bytes against
-  hash plus expected size. Tests use synthetic strings rather than private audio.
-- AudioBackupManifestCodec encodes a versioned remote inventory without local
-  file locations. The distinct AudioBackupAuthorization launcher requests the
-  least-privileged drive.file scope on explicit invocation.
-- DriveAudioBackupGateway supports folder creation/verification by ID,
-  resumable upload session initiation, status probe after uncertain chunks,
-  256 KiB-aligned chunk writes, session cancellation and SHA-checked staging
-  of remote downloads in a temporary private file. No user file is deleted.
-- The backup components are **not** invoked automatically and there is no
-  new backup screen yet. Completing the end-to-end feature still requires:
-  an owner-approved UI, persisting folder/account/session state, mobile-data
-  and quota guardrails, SAF destination selection, failure recovery and live
-  user-authorized device transfer tests. None is claimed as operational.
-- Do not use the hidden appDataFolder to hold music; do not expand the
-  ordinary playlist OAuth grant or launch audio uploads automatically.
+- Preserve the approved top edge and panel width. Increase the previous
+  31.28 dp visual height by exactly 15% (~35.97 dp); all growth is downward.
+- Change the left inset to 12 dp. Keep a 48 dp slot reserved for the overflow
+  menu in both linked and disconnected states, so Sync cannot jump to the
+  right edge when the menu is hidden.
+- Keep the menu glyph x fixed and recenter the row on the visual card center.
+  Sync stays within its independent 48 dp touch target. The full Drive status
+  is available by tapping the summary if it truncates on narrow screens.
+- Cloud glyph and semantic status colors remain. Actual rendered margins,
+  fonts, Touch and TalkBack require Android QA.
 
-## Lyrics — local support with licensing gate
+## Audio backup: now reachable as explicit manual actions
 
-- Fullscreen now-playing includes a collapsed-by-default lyrics expander,
-  inspired only by the layout/interaction of Our Soundtrack. Its read-only
-  source repository was not edited.
-- Users may import their own text through Android SAF. UTF-8 .txt and .lrc
-  parsing is bounded to 256 KiB, and content is atomically stored inside
-  the app's private no-backup directory, keyed by an opaque hash. Lyrics are
-  not exported to portable playlists, nor does the player upload private audio.
-- Track-scoped UI state prevents the previous song's text appearing when
-  playback changes quickly. Static text works; LRC timestamps are parsed
-  but timed highlighting has not been enabled.
-- Provider-independent candidate matching uses title/artist and cautious
-  album/duration validation, preserving live, remix and cover qualifiers.
-  An abstract external provider API exists, but **no external provider is
-  enabled** and no copyrighted lyrics are bundled.
-- A publicly reachable LRCLIB API does not itself establish rights for
-  public display of third-party lyrics. Enable external lyrics only after
-  documented permissions or an appropriate licensed provider contract.
+- Inside the existing Drive overflow menu, "Backup file audio…" opens the
+  Android SAF multiple-audio picker. The app asks for explicit confirmation;
+  mobile/metered data are blocked unless the user enables that option.
+- A distinct drive.file OAuth grant is requested only after that action,
+  independently from the metadata playlist synchronization using drive.appdata.
+- The backup workflow creates/verifies a visible Drive folder by persisted
+  ID and verifies account binding by an opaque Drive permission ID. It refuses
+  unexpected account switches.
+- It hashes selected audio and checks exact size. The Drive inventory records
+  SHA-256 in appProperties to avoid reuploading identical content. Versioned
+  manifest/planner logic handles colliding names and content duplicates.
+- Uploads are resumable by Drive sessions, with confirmed-offset probes after
+  temporary network errors; the user can cancel the active session. Remote
+  files that already completed are never deleted by cancellation.
+- "Ripristina file audio…" lists recognized remote records. Selecting one
+  stages a verified SHA-256 download before Android asks for a destination
+  document. The resulting write is verified again. Playlist matching can then
+  be recovered through the existing MediaStore rescan and SHA-256 mechanism.
+- No bulk local scan, background upload, automatic remote deletion, or playlist
+  JSON v1 changes. Real OAuth/transfer integration, cancellation race cases
+  and cross-device restore still require explicit Android QA. Progress currently
+  counts files, not streaming byte percentage.
+- Remaining product work: owner-supplied final backup UI redesign, durable
+  cross-process session recovery, remote quota/available storage policy,
+  multi-file batch restoration, and enhanced retry/recovery controls.
 
-## Verification and release
+## Lyrics: removed from player until an authorized automatic provider exists
 
-CI on this branch runs core JUnit and Android debug/QA builds. The push
-workflow can publish a prerelease APK only with its established persistent
-QA signing secret; PR jobs use disposable certificates that must never be
-distributed. Device visuals, TalkBack, real OAuth, mobile data use, actual
-Google Drive transfers and display rights require independent verification.
+The earlier local-text picker and expander were **not** the requested product.
+They are removed from the visible/fullscreen player. There is no "Lyrics" UI,
+no local manual text import, and no automatic provider request in this build.
+Provider-independent matching and parser models remain private architectural
+components only. LRCLIB's public endpoint is not enough to establish rights
+to display third-party copyrighted song texts. A licensed provider, for
+example a suitable Musixmatch developer contract, requires contractual rights
+and credentials. No protected lyrics are bundled or transmitted.
+
+## Build/release constraints
+
+Gradle CI runs core JUnit and Android builds on push and PR. Only a trusted
+push run with the established persistent QA signing secret may publish a
+prerelease APK. Verify push and PR on the exact new head, signature parity,
+asset integrity and source SHA. Neither CI nor static geometry proves visual
+QA, remote Drive transfer, content-provider behavior, or licensing.

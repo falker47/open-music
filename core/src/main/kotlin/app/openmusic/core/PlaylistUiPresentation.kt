@@ -42,12 +42,28 @@ object PlaylistUiPresentation {
      * its bottom to the ordinary baseline. The full 48dp hitboxes do not shrink.
      */
     const val playlistHeaderVisualTopInsetDp = playlistHeaderWordmarkTopInsetDp
+    /** 15% extra visual height extends DOWN from the existing top, never upwards. */
     const val playlistHeaderVisualHeightDp =
-        playlistHeaderWordmarkHeightDp * (475f - 182f) / 356f
+        playlistHeaderWordmarkHeightDp * (475f - 182f) / 356f * 1.15f
     const val playlistHeaderTouchHeightDp = playlistHeaderControlRowHeightDp
 
-    /** Move only the Sync glyph inside its unchanged, non-overlapping 48dp hitbox. */
-    const val playlistHeaderSyncGlyphOffsetDp = (48f - (21f + 24f) / 2f) / 2f
+    /** Touch controls center on the visual card rather than on its larger hitbox. */
+    const val playlistHeaderRowCenterOffsetDp =
+        playlistHeaderVisualTopInsetDp + playlistHeaderVisualHeightDp / 2f -
+            playlistHeaderTouchHeightDp / 2f
+    const val playlistHeaderLeftInsetDp = 12f
+    const val playlistHeaderButtonSizeDp = 48f
+    const val playlistHeaderSyncGlyphSizeDp = 21f
+    const val playlistHeaderMenuGlyphSizeDp = 24f
+    /** Keep the menu's position fixed and reserve its 48dp slot while disconnected. */
+    fun playlistHeaderSyncButtonCenterXDp(cardWidthDp: Float): Float =
+        cardWidthDp - playlistHeaderButtonSizeDp * 1.5f
+    fun playlistHeaderMenuButtonCenterXDp(cardWidthDp: Float): Float =
+        cardWidthDp - playlistHeaderButtonSizeDp / 2f
+    /** Preserve the earlier request for roughly half the free gap between glyphs. */
+    const val playlistHeaderSyncGlyphOffsetDp =
+        (playlistHeaderButtonSizeDp -
+            (playlistHeaderSyncGlyphSizeDp + playlistHeaderMenuGlyphSizeDp) / 2f) / 2f
     fun playlistHeaderMinPanelHeightDp(): Float = playlistHeaderTouchHeightDp
 
     /** Offline create/import are contextual playlist actions, not Drive actions. */
