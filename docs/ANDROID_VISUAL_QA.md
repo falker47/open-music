@@ -121,3 +121,22 @@ Check the 2 equal category tabs, destination icons and action tap targets.
 Verify launcher on home screen, app switcher, notification and themed Android
 icons where supported. CI compile/assets checks do not establish pixel-perfect
 layout or icon rendering on each manufacturer.
+
+## Narrow UI refinements — 4 November 2026
+
+Still OPEN for Android device QA, even with green Gradle/CI:
+
+- Library: the title/metadata column and the rightmost playlist action remain fixed;
+  the first two action glyphs move closer to the rightmost one, while their
+  original tap regions remain intact. Check long titles and narrow screens.
+- Playlist: the logo-style custom vector header reads «Playlist»; Drive is left
+  of Create/Import, and icon-only sync has a 48dp hit region. Check linked,
+  unlinked, clean, pending, error, deleted and conflict cases.
+- Active playlist ⋮: only «Rinomina» and «Elimina» labels and rename icon changed;
+  confirm existing dialogs still handle data safely.
+- Editor: verify all four initial/current membership combinations, immediate
+  red/green/amber changes during toggling, orange checkmarks, unsaved cancel,
+  persisted multi-edit, long labels and enlarged font.
+- Mini-player: seek-preview bubble sits in its own vertical lane above its
+  unchanged slider, clamped at left/right ends; compare seek completion and
+  appearance with fullscreen on both Library and Playlist screens.

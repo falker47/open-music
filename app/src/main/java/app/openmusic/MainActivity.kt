@@ -1304,9 +1304,8 @@ private fun OpenMusicApp() {
             if (deletedIds.any { cloudState.checkpoints[it]?.deleted == false })
                 "Eliminazione playlist da confermare su Drive"
             else "Playlist locali mancanti · verifica Drive"
-        localSyncStatus.pendingCount > 0 -> localSyncStatus.pendingCount.toString() +
-            " playlist da sincronizzare"
-        else -> "Nessuna modifica da salvare"
+        localSyncStatus.pendingCount > 0 -> "Da sincronizzare"
+        else -> "Sincronizzato"
     }
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },

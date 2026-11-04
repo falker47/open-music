@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Original rounded geometric letter paths, constructed to match the approved
+     Open Music vector wordmark's weight and amber color. No third-party font. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="164dp"
+    android:height="51dp"
+    android:viewportWidth="500"
+    android:viewportHeight="155">
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#ED8840"
+        android:strokeWidth="20"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M20,116 V26 H61 C92,26 92,73 61,73 H20
+            M114,24 V116
+            M198,86 C198,68 188,58 173,58 C158,58 147,70 147,87 C147,105 158,116 173,116 C188,116 198,106 198,86 Z M198,61 V116
+            M224,63 L250,114 L275,63 M250,114 Q245,132 232,140
+            M297,24 V116
+            M328,64 V116 M328,31 L328,31.2
+            M399,65 C385,54 364,55 358,68 C351,81 367,85 382,89 C407,96 406,109 391,115 C379,120 365,113 356,106
+            M448,37 V111 Q448,116 454,116 M427,64 H477" />
+</vector>

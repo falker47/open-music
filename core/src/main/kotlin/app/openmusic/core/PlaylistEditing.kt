@@ -20,7 +20,20 @@ data class PlaylistContentEditResult(
     val removed: Int,
 )
 
+enum class PlaylistEditorRowState {
+    ALREADY_IN_PLAYLIST, REMOVED, ADDED, UNCHANGED,
+}
+
 object PlaylistContentEditor {
+    /** Pure UI projection: initial verified membership is never inferred from a current tick. */
+    fun rowState(initiallyPresent: Boolean, selected: Boolean): PlaylistEditorRowState =
+        when {
+            initiallyPresent && selected -> PlaylistEditorRowState.ALREADY_IN_PLAYLIST
+            initiallyPresent -> PlaylistEditorRowState.REMOVED
+            selected -> PlaylistEditorRowState.ADDED
+            else -> PlaylistEditorRowState.UNCHANGED
+        }
+
     fun baseline(matches: List<MatchResult>, presentUris: Set<String>): Map<String, Set<String>> =
         matches.asSequence()
             .filter {
