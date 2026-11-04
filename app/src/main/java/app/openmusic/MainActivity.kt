@@ -1492,6 +1492,9 @@ private fun OpenMusicApp() {
                                 MusicPlaylistNavigation(
                                     playlists = playlists, selectedId = currentSelectedId,
                                     busy = busy.isNotEmpty(),
+                                    availableCount = matches.count { it.status == MatchStatus.EXACT },
+                                    analyzing = verifying,
+                                    needsVerification = !verificationComplete && !verifying,
                                     onSelect = { selectedId = it },
                                     onAddTracks = {
                                         selected?.let { openPicker(it.playlistId) }
@@ -1531,19 +1534,25 @@ private fun OpenMusicApp() {
                                 )
                             }
                         } else {
-                            val available = matches.count { it.status == MatchStatus.EXACT }
                             val missingTitles = if (verificationComplete) selected.tracks.filter {
                                 byEntryId[it.entryId]?.status == MatchStatus.MISSING
                             }.map {
                                 it.identity.metadata.title ?: it.identity.filenameHint ?: "Brano senza titolo"
                             } else emptyList()
-                            item {
-                                MusicPlaylistSummary(
-                                    trackCount = selected.tracks.size,
-                                    available = available, analyzing = verifying,
-                                    needsVerification = !verificationComplete && !verifying,
-                                    unreadableCount = unreadableCount, missingTitles = missingTitles,
+                            // Availability now lives in the active playlist header.
+                            // Preserve this secondary panel only for actionable exceptions.
+                            if (!verifying && PlaylistUiPresentation.needsExceptionSummary(
+                                    unreadableCount, missingTitles.size,
                                 )
+                            ) {
+                                item {
+                                    MusicPlaylistSummary(
+                                        trackCount = selected.tracks.size,
+                                        analyzing = verifying,
+                                        unreadableCount = unreadableCount,
+                                        missingTitles = missingTitles,
+                                    )
+                                }
                             }
                             if (selected.tracks.isEmpty()) {
                                 item {

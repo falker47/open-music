@@ -88,7 +88,6 @@ import app.openmusic.core.PortablePlaylist
 import app.openmusic.core.PlaylistSelection
 import app.openmusic.core.PlaylistEditorRowState
 import app.openmusic.core.PlaylistContentEditor
-import app.openmusic.core.PlaylistNavLayout
 import app.openmusic.core.PlaybackUiLogic
 import app.openmusic.core.PlaylistUiPresentation
 import app.openmusic.core.PlaybackQueuePlan
@@ -596,65 +595,115 @@ internal fun MusicLibraryCategoryTabs(
 }
 
 
-/** Active playlist owns its contextual commands; other tabs only select. */
+/** A single active playlist header, with every contextual action in fixed order. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun MusicPlaylistNavigation(
     playlists: List<PortablePlaylist>, selectedId: String?, busy: Boolean,
+    availableCount: Int, analyzing: Boolean, needsVerification: Boolean,
     onSelect: (String) -> Unit, onAddTracks: () -> Unit,
     onRelink: () -> Unit, onExport: () -> Unit,
     onRename: () -> Unit, onDelete: () -> Unit,
 ) {
-    val layout = PlaylistSelection.layout(playlists.size)
-    if (layout == PlaylistNavLayout.NONE) return
+    if (PlaylistUiPresentation.selectorTabCount(playlists.size) == 0) return
     val currentId = PlaylistSelection.resolveId(playlists, selectedId)
     val current = playlists.firstOrNull { it.playlistId == currentId } ?: return
+    val canChoose = PlaylistUiPresentation.canChooseOtherPlaylist(playlists.size)
+    val availableText = PlaylistUiPresentation.availability(
+        available = availableCount, total = current.tracks.size,
+        analyzing = analyzing, needsVerification = needsVerification,
+    )
     var showChooser by remember { mutableStateOf(false) }
+    var showActions by remember(currentId) { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
 
-    Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
-            .background(MusicPalette.surface).padding(1.dp),
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = MusicPalette.surface,
+        border = BorderStroke(1.dp, MusicPalette.border.copy(alpha = 0.7f)),
     ) {
-        if (layout == PlaylistNavLayout.DOUBLE) {
-            playlists.forEach { playlist ->
-                MusicPlaylistTab(
-                    title = playlist.name, selected = playlist.playlistId == currentId,
-                    modifier = Modifier.weight(1f), busy = busy,
-                    onClick = { onSelect(playlist.playlistId) },
-                    onAdd = onAddTracks, onRelink = onRelink, onExport = onExport,
-                    onRename = onRename, onDelete = onDelete,
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 64.dp)
+                .padding(start = 12.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                Modifier.weight(1f).padding(vertical = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(
+                    current.name,
+                    color = MusicPalette.text,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontSize = 17.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    availableText,
+                    color = MusicPalette.subtle,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
-        } else {
-            MusicPlaylistTab(
-                title = current.name, selected = true, modifier = Modifier.weight(1f),
-                busy = busy,
-                onClick = { if (layout == PlaylistNavLayout.PICKER) showChooser = true },
-                onAdd = onAddTracks, onRelink = onRelink, onExport = onExport,
-                onRename = onRename, onDelete = onDelete,
-            )
-            if (layout == PlaylistNavLayout.PICKER) {
-                Surface(
-                    onClick = { showChooser = true },
-                    modifier = Modifier.weight(1f).height(40.dp),
-                    shape = RoundedCornerShape(11.dp),
-                    color = Color.Transparent,
+            IconButton(
+                onClick = onAddTracks, enabled = !busy,
+                modifier = Modifier.size(48.dp),
+            ) {
+                Icon(
+                    Icons.Rounded.Add, contentDescription = "Modifica brani della playlist",
+                    tint = MusicPalette.primary, modifier = Modifier.size(24.dp),
+                )
+            }
+            IconButton(
+                onClick = { showChooser = true },
+                enabled = canChoose,
+                modifier = Modifier.size(48.dp),
+            ) {
+                Icon(
+                    Icons.Rounded.FolderOpen,
+                    contentDescription = if (canChoose) "Scegli un'altra playlist"
+                        else "Nessun'altra playlist disponibile",
+                    tint = if (canChoose) MusicPalette.muted else MusicPalette.subtle,
+                    modifier = Modifier.size(23.dp),
+                )
+            }
+            Box {
+                IconButton(
+                    onClick = { showActions = true }, enabled = !busy,
+                    modifier = Modifier.size(48.dp),
                 ) {
-                    Row(
-                        Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center,
-                    ) {
-                        Icon(Icons.Rounded.FolderCopy, contentDescription = null,
-                            modifier = Modifier.size(20.dp), tint = MusicPalette.primary)
-                        Spacer(Modifier.width(4.dp))
-                        Text("Tutte (" + playlists.size + ")",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MusicPalette.text, maxLines = 1,
-                            overflow = TextOverflow.Ellipsis)
-                    }
+                    Icon(
+                        Icons.Rounded.MoreVert,
+                        contentDescription = "Opzioni della playlist",
+                    )
+                }
+                DropdownMenu(
+                    expanded = showActions,
+                    onDismissRequest = { showActions = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Trova file") },
+                        onClick = { showActions = false; onRelink() },
+                        leadingIcon = { Icon(Icons.Rounded.Link, contentDescription = null) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Esporta") },
+                        onClick = { showActions = false; onExport() },
+                        leadingIcon = { Icon(Icons.Rounded.FileUpload, contentDescription = null) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Rinomina") },
+                        onClick = { showActions = false; onRename() },
+                        leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Elimina") },
+                        onClick = { showActions = false; onDelete() },
+                        leadingIcon = { Icon(Icons.Rounded.DeleteOutline, contentDescription = null) },
+                    )
                 }
             }
         }
@@ -696,75 +745,23 @@ internal fun MusicPlaylistNavigation(
                                     .padding(horizontal = 12.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Text(playlist.name, modifier = Modifier.weight(1f),
-                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                if (playlist.playlistId == currentId)
-                                    Icon(Icons.Rounded.CheckCircle, contentDescription = "Selezionata",
-                                        tint = MusicPalette.primary)
+                                Text(
+                                    playlist.name, modifier = Modifier.weight(1f),
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                )
+                                if (playlist.playlistId == currentId) {
+                                    Icon(
+                                        Icons.Rounded.CheckCircle,
+                                        contentDescription = "Selezionata",
+                                        tint = MusicPalette.primary,
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun MusicPlaylistTab(
-    title: String, selected: Boolean, modifier: Modifier, busy: Boolean,
-    onClick: () -> Unit, onAdd: () -> Unit, onRelink: () -> Unit,
-    onExport: () -> Unit, onRename: () -> Unit, onDelete: () -> Unit,
-) {
-    var showActions by remember(selected, title) { mutableStateOf(false) }
-    // Keep a 48dp interactive region; draw the tab itself at only 40dp.
-    Box(modifier.heightIn(min = 48.dp), contentAlignment = Alignment.Center) {
-    Surface(
-        onClick = onClick, modifier = Modifier.fillMaxWidth().height(40.dp),
-        shape = RoundedCornerShape(11.dp),
-        color = if (selected) MusicPalette.elevated else Color.Transparent,
-    ) {
-        Row(
-            Modifier.fillMaxWidth().padding(start = 8.dp, end = if (selected) 2.dp else 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(title, modifier = Modifier.weight(1f),
-                color = if (selected) MusicPalette.text else MusicPalette.muted,
-                style = MaterialTheme.typography.labelMedium,
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (selected) {
-                IconButton(onClick = onAdd, enabled = !busy, modifier = Modifier.size(40.dp)) {
-                    Icon(Icons.Rounded.Add, contentDescription = "Modifica brani della playlist",
-                        tint = MusicPalette.primary)
-                }
-                Box {
-                    IconButton(onClick = { showActions = true }, enabled = !busy,
-                        modifier = Modifier.size(40.dp)) {
-                        Icon(Icons.Rounded.MoreVert, contentDescription = "Opzioni della playlist")
-                    }
-                    DropdownMenu(expanded = showActions,
-                        onDismissRequest = { showActions = false }) {
-                        DropdownMenuItem(text = { Text("Trova file") },
-                            onClick = { showActions = false; onRelink() },
-                            leadingIcon = { Icon(Icons.Rounded.Link, contentDescription = null) })
-                        DropdownMenuItem(text = { Text("Esporta") },
-                            onClick = { showActions = false; onExport() },
-                            leadingIcon = { Icon(Icons.Rounded.FileUpload, contentDescription = null) })
-                        DropdownMenuItem(text = { Text("Rinomina") },
-                            onClick = { showActions = false; onRename() },
-                            leadingIcon = {
-                                Icon(Icons.Rounded.Edit, contentDescription = null)
-                            })
-                        DropdownMenuItem(text = { Text("Elimina") },
-                            onClick = { showActions = false; onDelete() },
-                            leadingIcon = {
-                                Icon(Icons.Rounded.DeleteOutline, contentDescription = null)
-                            })
-                    }
-                }
-            }
-        }
-    }
     }
 }
 
@@ -968,8 +965,7 @@ internal fun MusicTrackRow(
 
 @Composable
 internal fun MusicPlaylistSummary(
-    trackCount: Int, available: Int, analyzing: Boolean,
-    needsVerification: Boolean, unreadableCount: Int,
+    trackCount: Int, analyzing: Boolean, unreadableCount: Int,
     missingTitles: List<String>,
 ) {
     var showMissing by remember(trackCount) { mutableStateOf(false) }
@@ -979,14 +975,6 @@ internal fun MusicPlaylistSummary(
         border = BorderStroke(1.dp, MusicPalette.border.copy(alpha = 0.7f)),
     ) {
         Column(Modifier.padding(horizontal = 10.dp, vertical = 3.dp)) {
-            val detail = PlaylistUiPresentation.availability(
-                available = available, total = trackCount,
-                analyzing = analyzing, needsVerification = needsVerification)
-            Text(detail, color = MusicPalette.muted,
-                modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.Start,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 2, overflow = TextOverflow.Ellipsis)
             if (unreadableCount > 0 && !analyzing) {
                 Text("$unreadableCount audio non leggibili · usa Trova file",
                     style = MaterialTheme.typography.labelSmall, color = MusicPalette.warning)

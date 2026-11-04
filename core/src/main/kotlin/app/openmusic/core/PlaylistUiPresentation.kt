@@ -10,6 +10,16 @@ object PlaylistUiPresentation {
         else -> "$available / $total brani disponibili"
     }
 
+    /** The navigation never duplicates the active tab for 2+ playlists. */
+    fun selectorTabCount(playlistCount: Int): Int = if (playlistCount > 0) 1 else 0
+
+    /** The folder action stays visible but is inactive without alternatives. */
+    fun canChooseOtherPlaylist(playlistCount: Int): Boolean = playlistCount > 1
+
+    /** The extra panel is reserved for details that cannot fit in the tab subtitle. */
+    fun needsExceptionSummary(unreadableCount: Int, missingCount: Int): Boolean =
+        unreadableCount > 0 || missingCount > 0
+
     /** Equal 48dp touch targets, free horizontal gap = 1.3x button width when possible. */
     fun topControlGapDp(availableWidthDp: Float, buttonWidthDp: Float = 48f): Float =
         (buttonWidthDp * 1.3f).coerceAtMost(
