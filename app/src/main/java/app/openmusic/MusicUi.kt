@@ -268,7 +268,8 @@ internal fun MusicHeader(
 @Composable
 internal fun MusicPlaylistHeader() {
     Row(
-        Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 14.dp).height(40.dp),
+        Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 14.dp)
+            .heightIn(min = 48.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text("Playlist", color = MusicPalette.primary,
