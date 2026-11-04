@@ -272,89 +272,104 @@ internal fun MusicHeader(
     }
 }
 
+/**
+ * The Playlist wordmark uses exactly the same header position and vertical
+ * metrics as the approved Library wordmark. Actions belong BELOW this header.
+ */
 @Composable
-internal fun MusicPlaylistHeader(
-    enabled: Boolean, cloudLinked: Boolean, driveStatus: String,
-    driveWarning: Boolean, showCloudMenu: Boolean,
-    onDrive: () -> Unit, onShowCloudMenu: () -> Unit,
-    onDismissCloudMenu: () -> Unit, onDisconnect: () -> Unit,
-) {
-    BoxWithConstraints(
-        Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 14.dp)
-            .heightIn(min = 56.dp),
+internal fun MusicPlaylistHeader() {
+    Row(
+        Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 14.dp).heightIn(min = 40.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        val driveCardWidth = maxWidth * 0.52f
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Image(
-                painter = painterResource(R.drawable.open_music_playlist_wordmark),
-                contentDescription = "Playlist",
-                modifier = Modifier.weight(1f).height(38.dp),
-                contentScale = ContentScale.Fit, alignment = Alignment.CenterStart,
-            )
-            Spacer(Modifier.width(8.dp))
-            MusicPlaylistDriveCard(
-                modifier = Modifier.width(driveCardWidth),
-                enabled = enabled, cloudLinked = cloudLinked,
-                driveStatus = driveStatus, driveWarning = driveWarning,
-                showCloudMenu = showCloudMenu, onDrive = onDrive,
-                onShowCloudMenu = onShowCloudMenu,
-                onDismissCloudMenu = onDismissCloudMenu, onDisconnect = onDisconnect,
-            )
-        }
+        Image(
+            painter = painterResource(R.drawable.open_music_playlist_wordmark),
+            contentDescription = "Playlist",
+            modifier = Modifier.weight(1f).height(38.dp),
+            contentScale = ContentScale.Fit,
+            alignment = Alignment.CenterStart,
+        )
     }
 }
 
-/** Drive remains next to the title, including when no playlist exists. */
+/**
+ * One unified secondary panel instead of three competing cards.
+ * The title and status of Drive stay on the SAME row as both its controls;
+ * its global actions are an inline footer, absent for zero playlists.
+ */
 @Composable
-private fun MusicPlaylistDriveCard(
-    modifier: Modifier, enabled: Boolean, cloudLinked: Boolean,
+internal fun MusicPlaylistToolbar(
+    enabled: Boolean, hasPlaylists: Boolean, cloudLinked: Boolean,
     driveStatus: String, driveWarning: Boolean, showCloudMenu: Boolean,
-    onDrive: () -> Unit, onShowCloudMenu: () -> Unit,
-    onDismissCloudMenu: () -> Unit, onDisconnect: () -> Unit,
+    onCreate: () -> Unit, onImport: () -> Unit, onDrive: () -> Unit,
+    onShowCloudMenu: () -> Unit, onDismissCloudMenu: () -> Unit,
+    onDisconnect: () -> Unit,
 ) {
     Surface(
-        modifier = modifier, shape = RoundedCornerShape(15.dp),
+        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+        shape = RoundedCornerShape(14.dp),
         color = MusicPalette.surface,
         border = BorderStroke(1.dp, MusicPalette.border.copy(alpha = 0.7f)),
     ) {
         BoxWithConstraints {
-            // Two icon touch targets leave too little horizontal room for status
-            // at half-screen width: move actions below the full-width status.
-            val stacked = cloudLinked && maxWidth < 205.dp
-            val status: @Composable () -> Unit = {
-                Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                    Text("Google Drive", style = MaterialTheme.typography.labelSmall,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(driveStatus,
-                        color = if (driveWarning) MusicPalette.warning else MusicPalette.muted,
-                        style = MaterialTheme.typography.labelSmall,
-                        maxLines = 2, overflow = TextOverflow.Ellipsis)
-                }
-            }
-            if (stacked) {
-                Column(
-                    Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 3.dp),
-                ) {
-                    status()
-                    Row(Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically) {
-                        MusicDriveSyncButton(enabled, cloudLinked, onDrive)
-                        MusicDriveMenuButton(enabled, showCloudMenu, onShowCloudMenu,
-                            onDismissCloudMenu, onDisconnect)
-                    }
-                }
-            } else {
+            val showCloudIcon = maxWidth >= 300.dp
+            Column {
                 Row(
-                    Modifier.fillMaxWidth().heightIn(min = 56.dp)
-                        .padding(start = 5.dp, end = 2.dp, top = 4.dp, bottom = 4.dp),
+                    Modifier.fillMaxWidth().heightIn(min = 54.dp)
+                        .padding(start = 12.dp, end = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Box(Modifier.weight(1f)) { status() }
+                    if (showCloudIcon) {
+                        Icon(Icons.Rounded.Cloud, contentDescription = null,
+                            modifier = Modifier.size(18.dp), tint = MusicPalette.primary)
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Column(
+                        Modifier.weight(1f).padding(vertical = 6.dp)
+                            .semantics(mergeDescendants = true) {
+                                contentDescription = "Google Drive, $driveStatus"
+                            },
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        Text(
+                            "Google Drive", style = MaterialTheme.typography.labelMedium,
+                            color = MusicPalette.text, maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            driveStatus,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (driveWarning) MusicPalette.warning else MusicPalette.muted,
+                            maxLines = 3, overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                     MusicDriveSyncButton(enabled, cloudLinked, onDrive)
                     if (cloudLinked) MusicDriveMenuButton(
                         enabled, showCloudMenu, onShowCloudMenu,
                         onDismissCloudMenu, onDisconnect)
+                }
+                if (hasPlaylists) {
+                    HorizontalDivider(
+                        thickness = 1.dp,
+                        color = MusicPalette.border.copy(alpha = 0.55f),
+                    )
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        MusicPlaylistGlobalButton(
+                            "Nuova playlist", Icons.Rounded.Add,
+                            Modifier.weight(1f), enabled, primary = true, onClick = onCreate,
+                        )
+                        Box(
+                            Modifier.width(1.dp).height(24.dp)
+                                .background(MusicPalette.border.copy(alpha = 0.55f)),
+                        )
+                        MusicPlaylistGlobalButton(
+                            "Importa", Icons.Rounded.FileDownload,
+                            Modifier.weight(1f), enabled, primary = false, onClick = onImport,
+                        )
+                    }
                 }
             }
         }
@@ -366,10 +381,12 @@ private fun MusicDriveSyncButton(
     enabled: Boolean, linked: Boolean, onDrive: () -> Unit,
 ) {
     IconButton(onClick = onDrive, enabled = enabled, modifier = Modifier.size(48.dp)) {
-        Icon(Icons.Rounded.Sync,
+        Icon(
+            Icons.Rounded.Sync,
             contentDescription = if (linked) "Sincronizza Google Drive"
                 else "Collega Google Drive",
-            tint = MusicPalette.primary, modifier = Modifier.size(21.dp))
+            tint = MusicPalette.primary, modifier = Modifier.size(21.dp),
+        )
     }
 }
 
@@ -379,8 +396,10 @@ private fun MusicDriveMenuButton(
     onDismissCloudMenu: () -> Unit, onDisconnect: () -> Unit,
 ) {
     Box {
-        IconButton(onClick = onShowCloudMenu, enabled = enabled,
-            modifier = Modifier.size(40.dp)) {
+        IconButton(
+            onClick = onShowCloudMenu, enabled = enabled,
+            modifier = Modifier.size(40.dp),
+        ) {
             Icon(Icons.Rounded.MoreVert, contentDescription = "Opzioni Google Drive")
         }
         DropdownMenu(expanded = showCloudMenu, onDismissRequest = onDismissCloudMenu) {
@@ -389,51 +408,23 @@ private fun MusicDriveMenuButton(
     }
 }
 
-/** The '+' of an active tab edits tracks; these are global actions. */
-@Composable
-internal fun MusicPlaylistToolbar(
-    enabled: Boolean, hasPlaylists: Boolean,
-    onCreate: () -> Unit, onImport: () -> Unit,
-) {
-    if (!hasPlaylists) return
-    BoxWithConstraints(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
-        val stack = maxWidth < 300.dp ||
-            (LocalDensity.current.fontScale > 1.4f && maxWidth < 380.dp)
-        if (stack) {
-            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                MusicPlaylistGlobalButton("Nuova playlist", Icons.Rounded.Add,
-                    Modifier.fillMaxWidth(), enabled, onCreate)
-                MusicPlaylistGlobalButton("Importa", Icons.Rounded.FileDownload,
-                    Modifier.fillMaxWidth(), enabled, onImport)
-            }
-        } else {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                MusicPlaylistGlobalButton("Nuova playlist", Icons.Rounded.Add,
-                    Modifier.weight(1f), enabled, onCreate)
-                MusicPlaylistGlobalButton("Importa", Icons.Rounded.FileDownload,
-                    Modifier.weight(1f), enabled, onImport)
-            }
-        }
-    }
-}
-
 @Composable
 private fun MusicPlaylistGlobalButton(
     title: String, icon: ImageVector, modifier: Modifier,
-    enabled: Boolean, onClick: () -> Unit,
+    enabled: Boolean, primary: Boolean, onClick: () -> Unit,
 ) {
-    OutlinedButton(onClick = onClick, enabled = enabled,
-        modifier = modifier.heightIn(min = 44.dp),
-        contentPadding = PaddingValues(horizontal = 8.dp),
-        border = BorderStroke(1.dp, MusicPalette.border),
-        colors = ButtonDefaults.outlinedButtonColors(
-            containerColor = MusicPalette.surface, contentColor = MusicPalette.primary,
+    TextButton(
+        onClick = onClick, enabled = enabled, modifier = modifier.heightIn(min = 48.dp),
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 5.dp),
+        colors = ButtonDefaults.textButtonColors(
+            contentColor = if (primary) MusicPalette.primary else MusicPalette.muted,
         ),
+        shape = RoundedCornerShape(11.dp),
     ) {
         Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(6.dp))
+        Spacer(Modifier.width(7.dp))
         Text(title, style = MaterialTheme.typography.labelMedium,
-            maxLines = 1, overflow = TextOverflow.Ellipsis)
+            maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -987,13 +978,13 @@ internal fun MusicPlaylistSummary(
         shape = RoundedCornerShape(16.dp), color = MusicPalette.surface,
         border = BorderStroke(1.dp, MusicPalette.border.copy(alpha = 0.7f)),
     ) {
-        Column(Modifier.padding(horizontal = 10.dp, vertical = 4.dp)) {
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 3.dp)) {
             val detail = PlaylistUiPresentation.availability(
                 available = available, total = trackCount,
                 analyzing = analyzing, needsVerification = needsVerification)
             Text(detail, color = MusicPalette.muted,
                 modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.End,
+                textAlign = TextAlign.Start,
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 2, overflow = TextOverflow.Ellipsis)
             if (unreadableCount > 0 && !analyzing) {
@@ -1134,10 +1125,12 @@ internal fun MusicPlaybackSeek(
         }
         // The Slider's 4dp thumb leaves 2dp between its bounds and visible track.
         // Compact seeks compensate those offsets to meet artwork and Next edges.
+        // No requiredWidth/offset overflow. The mini-player owns a real inset
+        // from the Surface edges, matching its artwork and Next button.
         val sliderModifier = if (miniGeometry != null) {
-            Modifier.align(Alignment.BottomStart)
-                .offset(x = miniGeometry.sliderStartDp.dp)
-                .requiredWidth(miniGeometry.sliderWidthDp.dp).height(32.dp)
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                .padding(horizontal = miniGeometry.sliderStartDp.dp)
+                .height(32.dp)
         } else {
             Modifier.align(Alignment.BottomCenter)
                 .requiredWidth(if (alignTrackToEdges) maxWidth + 4.dp else maxWidth)
@@ -1177,7 +1170,8 @@ internal fun MusicMiniPlayer(
     ) {
         Column {
             Row(
-                Modifier.fillMaxWidth().heightIn(min = 68.dp).padding(start = 9.dp, end = 5.dp),
+                Modifier.fillMaxWidth().heightIn(min = 68.dp)
+                    .padding(horizontal = PlaylistUiPresentation.miniPlayerInsetDp.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(
@@ -1210,6 +1204,19 @@ internal fun MusicMiniPlayer(
                 }
             }
             MusicPlaybackSeek(title + "|" + uri, positionMs, durationMs, onSeek, compact = true)
+            // Persistent position / duration labels, sharing seek/artwork bounds.
+            Row(
+                Modifier.fillMaxWidth()
+                    .padding(horizontal = PlaylistUiPresentation.miniPlayerInsetDp.dp)
+                    .padding(bottom = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(formatMusicTime(positionMs), color = MusicPalette.muted,
+                    style = MaterialTheme.typography.labelSmall)
+                Text(if (durationMs > 0L) formatMusicTime(durationMs) else "--:--",
+                    color = MusicPalette.muted, style = MaterialTheme.typography.labelSmall)
+            }
         }
     }
 }

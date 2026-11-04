@@ -22,9 +22,12 @@ object PlaylistUiPresentation {
         val visibleStartDp: Float, val visibleEndDp: Float,
     )
 
+    /** Shared by the mini-player artwork, Next button, seek track and time labels. */
+    const val miniPlayerInsetDp = 14f
+
     fun miniSeekGeometry(widthDp: Float): MiniSeekGeometry {
-        val left = 9f // MusicArt begins 9dp inside the mini-player
-        val right = (widthDp - 5f).coerceAtLeast(left) // far edge of Next
+        val left = miniPlayerInsetDp
+        val right = (widthDp - miniPlayerInsetDp).coerceAtLeast(left)
         val thumbInset = 2f
         return MiniSeekGeometry(
             sliderStartDp = left - thumbInset,
