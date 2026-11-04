@@ -239,7 +239,7 @@ internal fun MusicBrandIdentity(modifier: Modifier = Modifier) {
     Image(
         painter = painterResource(R.drawable.open_music_wordmark_vector),
         contentDescription = "Open Music",
-        modifier = modifier.height(40.dp),
+        modifier = modifier.height(38.dp),
         contentScale = ContentScale.Fit,
         alignment = Alignment.CenterStart,
     )
