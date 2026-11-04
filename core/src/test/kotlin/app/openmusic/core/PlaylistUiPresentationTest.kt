@@ -67,4 +67,23 @@ class PlaylistUiPresentationTest {
         assertTrue(PlaylistUiPresentation.needsExceptionSummary(0, 1))
         assertTrue(PlaylistUiPresentation.needsExceptionSummary(3, 5))
     }
+
+    @Test fun playlistHeaderRightPanelTakesExactlyHalfOfThePaddedContentWidth() {
+        for (contentWidth in listOf(284f, 324f, 376f, 564f)) {
+            val card = PlaylistUiPresentation.playlistHeaderPanelWidthDp(contentWidth)
+            assertEquals(contentWidth / 2f, card, 0.001f)
+            assertTrue(card <= contentWidth / 2f)
+            // Adding the existing 18dp right margin gives half the full screen.
+            assertEquals((contentWidth + 36f) / 2f, card + 18f, 0.001f)
+        }
+        assertEquals(0f, PlaylistUiPresentation.playlistHeaderPanelWidthDp(-10f), 0.001f)
+    }
+
+    @Test fun playlistWordmarkIsCentredOnSameFirstControlRowAsLibraryBrand() {
+        assertEquals(48f, PlaylistUiPresentation.playlistHeaderControlRowHeightDp, 0.001f)
+        assertEquals(38f, PlaylistUiPresentation.playlistHeaderWordmarkHeightDp, 0.001f)
+        assertEquals(5f, PlaylistUiPresentation.playlistHeaderWordmarkTopInsetDp, 0.001f)
+        assertEquals(48f, PlaylistUiPresentation.playlistHeaderMinPanelHeightDp(false), 0.001f)
+        assertEquals(97f, PlaylistUiPresentation.playlistHeaderMinPanelHeightDp(true), 0.001f)
+    }
 }
