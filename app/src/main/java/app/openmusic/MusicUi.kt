@@ -283,6 +283,7 @@ internal fun MusicPlaylistHeader(
         Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 14.dp)
             .heightIn(min = 56.dp),
     ) {
+        val driveCardWidth = maxWidth * 0.52f
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Image(
                 painter = painterResource(R.drawable.open_music_playlist_wordmark),
@@ -292,7 +293,7 @@ internal fun MusicPlaylistHeader(
             )
             Spacer(Modifier.width(8.dp))
             MusicPlaylistDriveCard(
-                modifier = Modifier.width(maxWidth * 0.52f),
+                modifier = Modifier.width(driveCardWidth),
                 enabled = enabled, cloudLinked = cloudLinked,
                 driveStatus = driveStatus, driveWarning = driveWarning,
                 showCloudMenu = showCloudMenu, onDrive = onDrive,
