@@ -5,6 +5,9 @@ import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.util.LruCache
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -57,6 +60,7 @@ import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
@@ -82,6 +86,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.openmusic.core.DriveUiStatus
+import app.openmusic.core.DriveUiTone
+import app.openmusic.core.LyricsUiState
 import app.openmusic.core.MatchStatus
 import app.openmusic.core.AudioSearch
 import app.openmusic.core.PortablePlaylist
@@ -273,14 +280,14 @@ internal fun MusicHeader(
 }
 
 /**
- * The visible Drive background and the approved Playlist wordmark occupy the
- * same centered 38dp frame. Transparent action hitboxes extend to 48dp above
- * the purely decorative background; nothing is clipped by the Surface.
+ * The card visual top stays aligned with the original wordmark frame; only
+ * its bottom moves up to the ordinary-letter baseline (excluding the y).
+ * Button hitboxes remain 48dp and are not clipped.
  */
 @Composable
 internal fun MusicPlaylistHeader(
     enabled: Boolean, cloudLinked: Boolean,
-    driveStatus: String, driveWarning: Boolean, showCloudMenu: Boolean,
+    driveStatus: DriveUiStatus, showCloudMenu: Boolean,
     onDrive: () -> Unit, onShowCloudMenu: () -> Unit,
     onDismissCloudMenu: () -> Unit, onDisconnect: () -> Unit,
 ) {
@@ -306,7 +313,7 @@ internal fun MusicPlaylistHeader(
             MusicPlaylistDriveCard(
                 modifier = Modifier.width(rightCardWidth),
                 enabled = enabled, cloudLinked = cloudLinked,
-                driveStatus = driveStatus, driveWarning = driveWarning,
+                driveStatus = driveStatus,
                 showCloudMenu = showCloudMenu, onDrive = onDrive,
                 onShowCloudMenu = onShowCloudMenu,
                 onDismissCloudMenu = onDismissCloudMenu,
@@ -320,7 +327,7 @@ internal fun MusicPlaylistHeader(
 @Composable
 private fun MusicPlaylistDriveCard(
     modifier: Modifier, enabled: Boolean, cloudLinked: Boolean,
-    driveStatus: String, driveWarning: Boolean, showCloudMenu: Boolean,
+    driveStatus: DriveUiStatus, showCloudMenu: Boolean,
     onDrive: () -> Unit, onShowCloudMenu: () -> Unit,
     onDismissCloudMenu: () -> Unit, onDisconnect: () -> Unit,
 ) {
@@ -333,7 +340,8 @@ private fun MusicPlaylistDriveCard(
         // This Surface is visual only. Interactive buttons overlay it with
         // the platform's full 48dp touch target, including top/bottom overflow.
         Surface(
-            modifier = Modifier.align(Alignment.Center)
+            modifier = Modifier.align(Alignment.TopCenter)
+                .offset(y = PlaylistUiPresentation.playlistHeaderVisualTopInsetDp.dp)
                 .fillMaxWidth()
                 .height(PlaylistUiPresentation.playlistHeaderVisualHeightDp.dp),
             shape = RoundedCornerShape(12.dp),
@@ -351,22 +359,34 @@ private fun MusicPlaylistDriveCard(
                     .clip(RoundedCornerShape(6.dp))
                     .clickable { showStatusDetails = true }
                     .semantics(mergeDescendants = true) {
-                        contentDescription = "Google Drive: $driveStatus. Mostra stato completo"
+                        contentDescription = "Google Drive: ${driveStatus.label}. Mostra stato completo"
                     },
                 verticalArrangement = Arrangement.spacedBy(0.dp),
             ) {
                 if (!enlargedFont) {
-                    Text(
-                        if (shortDriveLabel) "Drive" else "Google Drive",
-                        color = MusicPalette.text,
-                        style = MaterialTheme.typography.labelSmall,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Rounded.Cloud, contentDescription = null,
+                            tint = MusicPalette.muted, modifier = Modifier.size(13.dp),
+                        )
+                        Spacer(Modifier.width(3.dp))
+                        Text(
+                            if (shortDriveLabel) "Drive" else "Google Drive",
+                            color = MusicPalette.text,
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
                 Text(
-                    driveStatus,
-                    color = if (driveWarning) MusicPalette.warning else MusicPalette.muted,
+                    driveStatus.label,
+                    color = when (driveStatus.tone) {
+                        DriveUiTone.SUCCESS -> Color(0xFF80D5A1)
+                        DriveUiTone.ATTENTION -> Color(0xFFFFBE72)
+                        DriveUiTone.ERROR -> Color(0xFFFF8989)
+                        DriveUiTone.NEUTRAL -> MusicPalette.muted
+                    },
                     style = MaterialTheme.typography.labelSmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -385,7 +405,7 @@ private fun MusicPlaylistDriveCard(
         AlertDialog(
             onDismissRequest = { showStatusDetails = false },
             title = { Text("Stato Google Drive") },
-            text = { Text(driveStatus) },
+            text = { Text(driveStatus.label) },
             confirmButton = {
                 TextButton(onClick = { showStatusDetails = false }) {
                     Text("Chiudi")
@@ -405,7 +425,9 @@ private fun MusicDriveSyncButton(
             Icons.Rounded.Sync,
             contentDescription = if (linked) "Sincronizza Google Drive"
                 else "Collega Google Drive",
-            tint = MusicPalette.primary, modifier = Modifier.size(21.dp),
+            tint = MusicPalette.primary,
+            modifier = Modifier.size(21.dp)
+                .offset(x = PlaylistUiPresentation.playlistHeaderSyncGlyphOffsetDp.dp),
         )
     }
 }
@@ -1235,6 +1257,7 @@ internal fun MusicNowPlaying(
     onClose: () -> Unit, onSeek: (Long) -> Unit, onPrevious: () -> Unit,
     onPlayPause: () -> Unit, onNext: () -> Unit,
     onToggleShuffle: () -> Unit, onToggleRepeatOne: () -> Unit, onOpenQueue: () -> Unit,
+    lyrics: LyricsUiState, onImportLyrics: () -> Unit,
 ) {
     BoxWithConstraints(modifier.background(MusicPalette.background)) {
         val controlWidth: Dp = (maxWidth - 36.dp).coerceAtMost(340.dp)
@@ -1386,6 +1409,92 @@ internal fun MusicNowPlaying(
                                 contentDescription = "Brano successivo",
                                 tint = MusicPalette.text, modifier = Modifier.size(52.dp))
                         }
+                    }
+                    Spacer(Modifier.height(18.dp))
+                    MusicLyricsPanel(
+                        state = lyrics, onImportLyrics = onImportLyrics,
+                        trackIdentity = uri.orEmpty(),
+                        modifier = Modifier.width(controlWidth),
+                    )
+                }
+            }
+        }
+    }
+}
+
+
+/** User-supplied local texts; no network provider is enabled without display rights. */
+@Composable
+private fun MusicLyricsPanel(
+    state: LyricsUiState, onImportLyrics: () -> Unit,
+    trackIdentity: String, modifier: Modifier = Modifier,
+) {
+    var expanded by rememberSaveable(trackIdentity) { mutableStateOf(false) }
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = MusicPalette.surface,
+        border = BorderStroke(1.dp, MusicPalette.border.copy(alpha = 0.7f)),
+    ) {
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    .clickable { expanded = !expanded }
+                    .padding(horizontal = 14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Testo", color = MusicPalette.text,
+                    style = MaterialTheme.typography.labelLarge)
+                Icon(
+                    Icons.Rounded.KeyboardArrowDown,
+                    contentDescription = if (expanded) "Chiudi testo" else "Apri testo",
+                    tint = MusicPalette.primary, modifier = Modifier.size(22.dp)
+                        .graphicsLayer { rotationZ = if (expanded) 180f else 0f },
+                )
+            }
+            AnimatedVisibility(
+                visible = expanded, enter = expandVertically(), exit = shrinkVertically(),
+            ) {
+                Column(
+                    Modifier.fillMaxWidth().background(MusicPalette.background)
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    if (state is LyricsUiState.Available) {
+                        Box(
+                            Modifier.fillMaxWidth().heightIn(max = 260.dp)
+                                .verticalScroll(rememberScrollState()),
+                        ) {
+                            Text(
+                                state.plainText, color = MusicPalette.muted,
+                                style = MaterialTheme.typography.bodyMedium,
+                                lineHeight = 23.sp, textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    } else {
+                        val message = when (state) {
+                            LyricsUiState.Loading -> "Caricamento testo…"
+                            LyricsUiState.Instrumental -> "Brano strumentale"
+                            LyricsUiState.NotFound -> "Nessun testo associato a questo brano"
+                            LyricsUiState.Offline -> "Connessione assente"
+                            LyricsUiState.ProviderError -> "Servizio testi non disponibile"
+                            LyricsUiState.Ambiguous -> "Più testi possibili: selezione necessaria"
+                            is LyricsUiState.Available -> ""
+                        }
+                        Text(
+                            message, color = MusicPalette.muted,
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    TextButton(onClick = onImportLyrics, modifier = Modifier.heightIn(min = 48.dp)) {
+                        Text(
+                            if (state is LyricsUiState.Available)
+                                "Sostituisci testo locale" else "Carica testo locale",
+                        )
                     }
                 }
             }

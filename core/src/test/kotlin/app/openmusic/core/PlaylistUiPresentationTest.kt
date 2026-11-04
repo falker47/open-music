@@ -86,13 +86,22 @@ class PlaylistUiPresentationTest {
         assertEquals(48f, PlaylistUiPresentation.playlistHeaderMinPanelHeightDp(), 0.001f)
     }
 
-    @Test fun driveCardVisualBoundsMatchTheWordmarkEvenWhenLinked() {
-        assertEquals(38f, PlaylistUiPresentation.playlistHeaderVisualHeightDp, 0.001f)
-        assertEquals(48f, PlaylistUiPresentation.playlistHeaderTouchHeightDp, 0.001f)
-        assertEquals(
-            PlaylistUiPresentation.playlistHeaderWordmarkHeightDp,
-            PlaylistUiPresentation.playlistHeaderVisualHeightDp, 0.001f)
-        assertEquals(48f, PlaylistUiPresentation.playlistHeaderMinPanelHeightDp(), 0.001f)
+    @Test fun driveCardKeepsTopFixedAndEndsAtOrdinaryGlyphBaseline() {
+        val ui = PlaylistUiPresentation
+        assertEquals(5f, ui.playlistHeaderVisualTopInsetDp, 0.001f)
+        assertEquals(38f * 293f / 356f, ui.playlistHeaderVisualHeightDp, 0.001f)
+        assertEquals(5f + 38f * 293f / 356f,
+            ui.playlistHeaderVisualTopInsetDp + ui.playlistHeaderVisualHeightDp, 0.001f)
+        assertTrue(ui.playlistHeaderVisualHeightDp < ui.playlistHeaderWordmarkHeightDp)
+        assertEquals(48f, ui.playlistHeaderTouchHeightDp, 0.001f)
+        assertEquals(48f, ui.playlistHeaderMinPanelHeightDp(), 0.001f)
+    }
+
+    @Test fun syncGlyphGapHalvesWithoutMovingTheMenuOrItsHitbox() {
+        val oldClearGap = 48f - (21f + 24f) / 2f
+        val gapAfter = oldClearGap - PlaylistUiPresentation.playlistHeaderSyncGlyphOffsetDp
+        assertEquals(oldClearGap / 2f, gapAfter, 0.001f)
+        assertTrue(PlaylistUiPresentation.playlistHeaderSyncGlyphOffsetDp < 24f)
     }
 
     @Test fun playlistContextMenuHasCreateImportExportRenameDeleteThenRelink() {

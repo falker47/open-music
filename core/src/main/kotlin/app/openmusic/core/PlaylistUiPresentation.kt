@@ -35,9 +35,19 @@ object PlaylistUiPresentation {
     fun playlistHeaderPanelWidthDp(contentWidthDp: Float): Float =
         contentWidthDp.coerceAtLeast(0f) / 2f
 
-    /** Visible card and wordmark share a 38dp frame; controls keep 48dp hits. */
-    const val playlistHeaderVisualHeightDp = playlistHeaderWordmarkHeightDp
+    /**
+     * The drawable has a 356-unit viewport, with the glyph group translated -182.
+     * The normal glyph baseline (e.g. the 's') is y=475; the 'y' descends to 516.
+     * Fix the card's TOP to the existing 5dp wordmark inset, and shorten only
+     * its bottom to the ordinary baseline. The full 48dp hitboxes do not shrink.
+     */
+    const val playlistHeaderVisualTopInsetDp = playlistHeaderWordmarkTopInsetDp
+    const val playlistHeaderVisualHeightDp =
+        playlistHeaderWordmarkHeightDp * (475f - 182f) / 356f
     const val playlistHeaderTouchHeightDp = playlistHeaderControlRowHeightDp
+
+    /** Move only the Sync glyph inside its unchanged, non-overlapping 48dp hitbox. */
+    const val playlistHeaderSyncGlyphOffsetDp = (48f - (21f + 24f) / 2f) / 2f
     fun playlistHeaderMinPanelHeightDp(): Float = playlistHeaderTouchHeightDp
 
     /** Offline create/import are contextual playlist actions, not Drive actions. */
