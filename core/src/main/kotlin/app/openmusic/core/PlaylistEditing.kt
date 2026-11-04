@@ -23,7 +23,10 @@ data class PlaylistContentEditResult(
 object PlaylistContentEditor {
     fun baseline(matches: List<MatchResult>, presentUris: Set<String>): Map<String, Set<String>> =
         matches.asSequence()
-            .filter { it.status == MatchStatus.EXACT && it.localUri in presentUris }
+            .filter {
+                it.status == MatchStatus.EXACT &&
+                    it.localUri?.let { uri -> uri in presentUris } == true
+            }
             .filter { !it.localUri.isNullOrBlank() }
             .groupBy { it.localUri!! }
             .mapValues { (_, entries) -> entries.map { it.entryId }.toSet() }
@@ -84,11 +87,11 @@ object PlaylistNameEditor {
         require(name.isNotEmpty() && name.length <= 160) {
             "Inserisci un nome tra 1 e 160 caratteri"
         }
+        if (name == playlist.name) return playlist
         require(allPlaylists.none {
             it.playlistId != playlist.playlistId &&
                 it.name.trim().equals(name, ignoreCase = true)
         }) { "Esiste già una playlist con questo nome" }
-        return if (name == playlist.name) playlist
-        else playlist.copy(name = name, updatedAt = updatedAt)
+        return playlist.copy(name = name, updatedAt = updatedAt)
     }
 }
