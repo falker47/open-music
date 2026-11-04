@@ -76,6 +76,31 @@ class PlaylistEditingTest {
         assertEquals(other, updated[1])
     }
 
+    @Test fun editorRowStateFollowsInitialMembershipAndLiveSelection() {
+        assertEquals(PlaylistEditorRowState.ALREADY_IN_PLAYLIST,
+            PlaylistContentEditor.rowState(initiallyPresent = true, selected = true))
+        assertEquals(PlaylistEditorRowState.REMOVED,
+            PlaylistContentEditor.rowState(initiallyPresent = true, selected = false))
+        assertEquals(PlaylistEditorRowState.ADDED,
+            PlaylistContentEditor.rowState(initiallyPresent = false, selected = true))
+        assertEquals(PlaylistEditorRowState.UNCHANGED,
+            PlaylistContentEditor.rowState(initiallyPresent = false, selected = false))
+    }
+
+    @Test fun editorRowStateReturnsToBaselineWhenToggleIsUndone() {
+        val base = mapOf("uri-a" to setOf("a"))
+        val selectedAfterRemoval = emptySet<String>()
+        assertEquals(PlaylistEditorRowState.REMOVED,
+            PlaylistContentEditor.rowState(
+                "uri-a" in base, "uri-a" in selectedAfterRemoval))
+        assertEquals(1,
+            PlaylistContentEditor.pending(base, selectedAfterRemoval).removalCount)
+        val restored = selectedAfterRemoval + "uri-a"
+        assertEquals(PlaylistEditorRowState.ALREADY_IN_PLAYLIST,
+            PlaylistContentEditor.rowState("uri-a" in base, "uri-a" in restored))
+        assertFalse(PlaylistContentEditor.pending(base, restored).hasChanges)
+    }
+
     @Test fun renamePreservesIdentityAndUpdatedAtOnlyChangesOnRealEdit() {
         val original = list().copy(tracks = listOf(entry("a"), entry("b")))
         val renamed = PlaylistNameEditor.rename(original, listOf(original),
