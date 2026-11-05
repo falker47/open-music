@@ -39,8 +39,11 @@ class EmbeddedLyricsReaderTest {
     private fun uslt(text: String, version: Int = 3, encoding: Int = 0): ByteArray {
         val content = if (encoding == 1) text.toByteArray(Charsets.UTF_16)
             else text.toByteArray(if (encoding == 3) Charsets.UTF_8 else Charsets.ISO_8859_1)
+        val descriptionTerminator = if (encoding == 1 || encoding == 2)
+            byteArrayOf(0, 0) else byteArrayOf(0)
         return frame("USLT", bytes(
-            byteArrayOf(encoding.toByte()), "eng".toByteArray(), byteArrayOf(0), content
+            byteArrayOf(encoding.toByte()), "eng".toByteArray(),
+            descriptionTerminator, content,
         ), version)
     }
 
