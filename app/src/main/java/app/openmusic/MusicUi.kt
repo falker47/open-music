@@ -95,6 +95,7 @@ import app.openmusic.core.PlaylistUiPresentation
 import app.openmusic.core.PlaylistMenuCommand
 import app.openmusic.core.PlaybackQueuePlan
 import app.openmusic.core.PlaylistVerification
+import app.openmusic.core.ParsedLyrics
 import app.openmusic.core.VerificationDisplay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -1267,11 +1268,13 @@ internal fun MusicNowPlaying(
     modifier: Modifier,
     title: String, artist: String, album: String, uri: String?,
     cache: LocalArtworkCache, playing: Boolean, positionMs: Long, durationMs: Long,
+    embeddedLyrics: ParsedLyrics?,
     shuffleEnabled: Boolean, repeatOneEnabled: Boolean, queueSize: Int,
     onClose: () -> Unit, onSeek: (Long) -> Unit, onPrevious: () -> Unit,
     onPlayPause: () -> Unit, onNext: () -> Unit,
     onToggleShuffle: () -> Unit, onToggleRepeatOne: () -> Unit, onOpenQueue: () -> Unit,
 ) {
+    var showEmbeddedLyrics by remember(uri) { mutableStateOf(false) }
     BoxWithConstraints(modifier.background(MusicPalette.background)) {
         val controlWidth: Dp = (maxWidth - 36.dp).coerceAtMost(340.dp)
         // Give the square artwork the full available horizontal presence.
@@ -1299,6 +1302,12 @@ internal fun MusicNowPlaying(
                 Text("IN RIPRODUZIONE", modifier = Modifier.align(Alignment.Center),
                     style = MaterialTheme.typography.labelSmall, letterSpacing = 1.sp,
                     color = MusicPalette.muted)
+                if (embeddedLyrics != null) {
+                    TextButton(onClick = { showEmbeddedLyrics = !showEmbeddedLyrics },
+                        modifier = Modifier.align(Alignment.CenterEnd)) {
+                        Text(if (showEmbeddedLyrics) "Copertina" else "Testo")
+                    }
+                }
             }
             // Keep the artwork, metadata, timeline and controls as one
             // centered group. If height is constrained, the whole group scrolls.
@@ -1311,12 +1320,19 @@ internal fun MusicNowPlaying(
                         .padding(vertical = 8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    MusicArt(
-                        source = uri, cache = cache,
-                        modifier = Modifier.width(artSize).aspectRatio(1f)
-                            .shadow(12.dp, RoundedCornerShape(18.dp)),
-                        quality = 720,
-                    )
+                    if (showEmbeddedLyrics && embeddedLyrics != null) {
+                        EmbeddedLyricsPanel(
+                            lyrics = embeddedLyrics, positionMs = positionMs,
+                            modifier = Modifier.width(artSize).height(artSize),
+                        )
+                    } else {
+                        MusicArt(
+                            source = uri, cache = cache,
+                            modifier = Modifier.width(artSize).aspectRatio(1f)
+                                .shadow(12.dp, RoundedCornerShape(18.dp)),
+                            quality = 720,
+                        )
+                    }
                     Spacer(Modifier.height(16.dp))
                     // Text, seek track and timestamps share the artwork edges.
                     Column(Modifier.width(artSize)) {

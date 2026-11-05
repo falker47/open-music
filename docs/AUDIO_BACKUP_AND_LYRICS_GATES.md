@@ -47,16 +47,21 @@ This is a code-level implementation, **not** a claim of real device QA.
   cross-process session recovery, remote quota/available storage policy,
   multi-file batch restoration, and enhanced retry/recovery controls.
 
-## Lyrics: removed from player until an authorized automatic provider exists
+## Lyrics: local embedded tags only; Internet source remains gated
 
-The earlier local-text picker and expander were **not** the requested product.
-They are removed from the visible/fullscreen player. There is no "Lyrics" UI,
-no local manual text import, and no automatic provider request in this build.
-Provider-independent matching and parser models remain private architectural
-components only. LRCLIB's public endpoint is not enough to establish rights
-to display third-party copyrighted song texts. A licensed provider, for
-example a suitable Musixmatch developer contract, requires contractual rights
-and credentials. No protected lyrics are bundled or transmitted.
+The previously removed manual text picker has not returned. Open Music now
+reads lyric tags **automatically from the playing local MP3/FLAC** (when present),
+with a Now Playing toggle and timing highlight if embedded timestamps exist.
+The default album artwork is unchanged when no tags are available. This
+requires no server, Google Drive, file modification or manual import.
+
+No third-party Internet lyrics provider is active; free API access alone does
+not establish rights to display or retain copyrighted text. The requested
+optional bulk offline download cannot be enabled without a provider agreement
+that explicitly allows app display and retention. Read
+[the lyrics provider research and implementation gate](LYRICS_PROVIDER_RESEARCH.md)
+for rights, source-by-source findings, matching rules and technical scope.
+Device QA of tag readers and timed display is not claimed.
 
 ## Build/release constraints
 

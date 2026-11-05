@@ -32,8 +32,11 @@ object LyricsCandidateResolver {
         if (title.isBlank() || artist.isBlank()) return LyricsMatch(LyricsMatchKind.MISSING_METADATA)
         val matching = candidates.filter { item ->
             normalized(item.title) == title && normalized(item.artist) == artist &&
-                (track.durationSeconds == null || item.durationSeconds == null ||
-                    abs(track.durationSeconds - item.durationSeconds) <= 2)
+                (normalized(track.album).isBlank() ||
+                    normalized(item.album) == normalized(track.album)) &&
+                (track.durationSeconds == null ||
+                    (item.durationSeconds != null &&
+                        abs(track.durationSeconds - item.durationSeconds) <= 2))
         }
         if (matching.isEmpty()) return LyricsMatch(LyricsMatchKind.NOT_FOUND)
         val ranked = matching.map { candidate ->
@@ -48,6 +51,25 @@ object LyricsCandidateResolver {
         return LyricsMatch(LyricsMatchKind.FOUND, ranked.first().first)
     }
 }
+
+
+/**
+ * A free HTTP response does not license protected lyrics.
+ * Remote providers must explicitly establish each right before wiring a player.
+ */
+data class LyricsSourceRights(
+    val canQueryApi: Boolean,
+    val canDisplayInApp: Boolean,
+    val canStoreOffline: Boolean,
+) {
+    fun allows(action: LyricsAction): Boolean = when (action) {
+        LyricsAction.QUERY -> canQueryApi
+        LyricsAction.DISPLAY -> canDisplayInApp
+        LyricsAction.STORE_OFFLINE -> canDisplayInApp && canStoreOffline
+    }
+}
+
+enum class LyricsAction { QUERY, DISPLAY, STORE_OFFLINE }
 
 data class TimedLyricLine(val startMs: Long, val text: String)
 data class ParsedLyrics(val plainText: String, val timedLines: List<TimedLyricLine>)

@@ -148,6 +148,7 @@ private fun OpenMusicApp() {
     var position by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
     var currentUri by remember { mutableStateOf<Uri?>(null) }
+    var embeddedLyrics by remember { mutableStateOf<ParsedLyrics?>(null) }
     var showNowPlaying by rememberSaveable { mutableStateOf(false) }
     val currentSelectedId = PlaylistSelection.resolveId(playlists, selectedId)
     val selected = playlists.firstOrNull { it.playlistId == currentSelectedId }
@@ -952,6 +953,22 @@ private fun OpenMusicApp() {
     }
 
 
+    // Local-only metadata read. A track switch cancels the previous read.
+    // No lyrics API, file writes, Google Drive, or background network requests.
+    LaunchedEffect(currentUri) {
+        val uri = currentUri
+        embeddedLyrics = null
+        if (uri != null && uri.scheme == "content") {
+            embeddedLyrics = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openInputStream(uri)?.use {
+                        EmbeddedLyricsReader.read(it)
+                    }
+                }.getOrNull()
+            }
+        }
+    }
+
     // Deletion is available only from the active playlist tab.
     deleteConfirmId?.let { id ->
         val target = playlists.firstOrNull { it.playlistId == id }
@@ -1356,6 +1373,7 @@ private fun OpenMusicApp() {
                 title = nowTitle, artist = nowArtist, album = nowAlbum,
                 uri = currentUri?.toString(),
                 cache = artworkCache, playing = playing,
+                embeddedLyrics = embeddedLyrics,
                 positionMs = position, durationMs = duration,
                 shuffleEnabled = shuffleEnabled, repeatOneEnabled = repeatOneEnabled,
                 queueSize = queueEntries.size,

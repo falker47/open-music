@@ -50,4 +50,32 @@ class LyricsCandidateResolverTest {
         assertEquals(1500L, lrc.timedLines[0].startMs)
         assertEquals(3250L, lrc.timedLines[1].startMs)
     }
+
+    @Test fun requiresCandidateAlbumAndDurationWhenKnownToAvoidWrongVersions() {
+        assertEquals(LyricsMatchKind.NOT_FOUND,
+            LyricsCandidateResolver.select(track,
+                listOf(candidate(album = "Studio Album"))).kind)
+        assertEquals(LyricsMatchKind.NOT_FOUND,
+            LyricsCandidateResolver.select(track,
+                listOf(LyricsCandidate("Song (Live)", "An Artist", null, 185,
+                    false, "sample", null))).kind)
+        assertEquals(LyricsMatchKind.NOT_FOUND,
+            LyricsCandidateResolver.select(track,
+                listOf(LyricsCandidate("Song (Live)", "An Artist", "Live Album",
+                    null, false, "sample", null))).kind)
+    }
+
+    @Test fun freeApiAccessNeverImpliesDisplayOrOfflineStorageRights() {
+        val freeApi = LyricsSourceRights(
+            canQueryApi = true, canDisplayInApp = false, canStoreOffline = false)
+        assertTrue(freeApi.allows(LyricsAction.QUERY))
+        assertFalse(freeApi.allows(LyricsAction.DISPLAY))
+        assertFalse(freeApi.allows(LyricsAction.STORE_OFFLINE))
+
+        val displayOnly = freeApi.copy(canDisplayInApp = true)
+        assertTrue(displayOnly.allows(LyricsAction.DISPLAY))
+        assertFalse(displayOnly.allows(LyricsAction.STORE_OFFLINE))
+        assertTrue(displayOnly.copy(canStoreOffline = true)
+            .allows(LyricsAction.STORE_OFFLINE))
+    }
 }
