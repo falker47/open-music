@@ -18,7 +18,7 @@ android {
     defaultConfig {
         applicationId = "app.openmusic"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
     }
@@ -33,6 +33,12 @@ android {
         }
     }
     buildTypes {
+        getByName("release") {
+            // Keep test builds unminified; optimize only the Play-targeted binary.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+        }
         create("qa") {
             initWith(getByName("debug"))
             signingConfig = if (qaSigningReady) signingConfigs.getByName("qa") else null
@@ -50,6 +56,7 @@ dependencies {
     implementation(project(":core"))
     implementation(platform("androidx.compose:compose-bom:2026.04.01"))
     implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.animation:animation")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.activity:activity-compose:1.11.0")
     implementation("androidx.media3:media3-exoplayer:1.11.1")

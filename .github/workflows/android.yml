@@ -38,9 +38,9 @@ jobs:
       - name: Test core and assemble ordinary debug APK
         run: gradle :core:test :app:assembleDebug --no-daemon --stacktrace
 
-      # Measure the existing unoptimized release packaging before enabling R8.
+      # Record comparable release package sizes and compressed content after each change.
       # PR-only: no upload, signing key, or Play publishing is involved.
-      - name: Measure unoptimized release candidates (baseline)
+      - name: Measure release APK and AAB sizes
         if: github.event_name == 'pull_request'
         shell: bash
         run: |

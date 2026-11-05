@@ -5,6 +5,12 @@ import android.net.Uri
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.os.Bundle
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.BackHandler
@@ -20,6 +26,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
@@ -102,7 +109,10 @@ private fun OpenMusicApp() {
     var playlists by remember { mutableStateOf(emptyList<PortablePlaylist>()) }
     var deletedIds by remember { mutableStateOf(emptySet<String>()) }
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
-    var tab by remember { mutableIntStateOf(0) }
+    var tab by rememberSaveable { mutableIntStateOf(0) }
+    // Keep both lists' scroll positions while a different screen is composed.
+    val libraryScrollState = rememberLazyListState()
+    val playlistScrollState = rememberLazyListState()
     var search by remember { mutableStateOf("") }
     var pickerPlaylistId by remember { mutableStateOf<String?>(null) }
     var pickerQuery by remember { mutableStateOf("") }
@@ -1352,8 +1362,26 @@ private fun OpenMusicApp() {
             }
         },
     ) { insets ->
-        if (pickerPlaylistId != null) {
-            val target = playlists.firstOrNull { it.playlistId == pickerPlaylistId }
+        val destination = when {
+            pickerPlaylistId != null -> "editor:" + pickerPlaylistId
+            showNowPlaying && nowTitle.isNotEmpty() -> "player"
+            tab == 0 -> "library"
+            else -> "playlists"
+        }
+        // Navigation-only transition. MediaController and playback state remain
+        // above this subtree; list positions are remembered independently.
+        AnimatedContent(
+            targetState = destination,
+            modifier = Modifier.fillMaxSize(),
+            transitionSpec = {
+                (fadeIn(animationSpec = tween(180)) +
+                    slideInHorizontally(animationSpec = tween(180)) { width -> width / 16 })
+                    .togetherWith(fadeOut(animationSpec = tween(140)))
+            },
+            label = "screenTransition",
+        ) { screen ->
+        if (screen.startsWith("editor:")) {
+            val target = playlists.firstOrNull { it.playlistId == screen.removePrefix("editor:") }
             if (target != null) {
                 val pending = PlaylistContentEditor.pending(pickerBaseline, pickerSelectedUris)
                 MusicPlaylistAddPicker(
@@ -1367,7 +1395,7 @@ private fun OpenMusicApp() {
                     modifier = Modifier.padding(insets),
                 )
             }
-        } else if (showNowPlaying && nowTitle.isNotEmpty()) {
+        } else if (screen == "player") {
             MusicNowPlaying(
                 modifier = Modifier.fillMaxSize().padding(insets),
                 title = nowTitle, artist = nowArtist, album = nowAlbum,
@@ -1404,7 +1432,7 @@ private fun OpenMusicApp() {
             Column(
                 Modifier.fillMaxSize().padding(insets).padding(horizontal = 18.dp),
             ) {
-                if (tab == 0) MusicHeader(
+                if (screen == "library") MusicHeader(
                     enabled = busy.isEmpty(),
                     onScan = { requestScan() },
                     onQueue = { showQueue = true },
@@ -1426,7 +1454,7 @@ private fun OpenMusicApp() {
                 if (busy.isNotEmpty()) MusicBusyIndicator(
                     busy, onCancel = if (verifying) ({ analysisJob?.cancel() }) else null,
                 )
-                if (tab == 0) {
+                if (screen == "library") {
                     MusicLibraryCategoryTabs(
                         onlyMusic = onlyMusic,
                         musicCount = musicCount,
@@ -1467,6 +1495,7 @@ private fun OpenMusicApp() {
                         )
                     } else {
                         LazyColumn(
+                            state = libraryScrollState,
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(bottom = 18.dp),
                         ) {
@@ -1492,6 +1521,7 @@ private fun OpenMusicApp() {
                     }
                 } else {
                     LazyColumn(
+                        state = playlistScrollState,
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(bottom = 20.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -1631,6 +1661,7 @@ private fun OpenMusicApp() {
                     }
                 }
             }
+        }
         }
     }
 
