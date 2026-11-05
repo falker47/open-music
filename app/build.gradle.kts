@@ -8,7 +8,10 @@ plugins {
 val qaStorePath = System.getenv("OPEN_MUSIC_QA_KEYSTORE_PATH")?.takeIf { it.isNotBlank() }
 val qaPassword = System.getenv("OPEN_MUSIC_QA_KEY_PASSWORD")?.takeIf { it.isNotBlank() }
 val qaSigningReady = qaStorePath != null && qaPassword != null
-if (gradle.startParameter.taskNames.any { it.endsWith("assembleQa", ignoreCase = true) } && !qaSigningReady) {
+if (gradle.startParameter.taskNames.any {
+        it.endsWith("assembleQa", ignoreCase = true) ||
+            it.endsWith("assembleQaOptimized", ignoreCase = true)
+    } && !qaSigningReady) {
     throw GradleException("QA signing is not configured; refusing an unsigned QA APK")
 }
 android {
@@ -43,6 +46,13 @@ android {
             initWith(getByName("debug"))
             signingConfig = if (qaSigningReady) signingConfigs.getByName("qa") else null
             matchingFallbacks += listOf("debug")
+        }
+        // R8 test binary: same QA identity and certificate, release-like code.
+        // Never sign this variant with a production key or upload it to Play.
+        create("qaOptimized") {
+            initWith(getByName("release"))
+            signingConfig = if (qaSigningReady) signingConfigs.getByName("qa") else null
+            matchingFallbacks += listOf("release")
         }
     }
     buildFeatures { compose = true }

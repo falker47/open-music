@@ -28,7 +28,7 @@ Android-first, local-first music player with portable playlists independent of f
 
 ## Technology
 
-- Android: Kotlin, Jetpack Compose, Media3 ExoPlayer; min API 26, target API 35.
+- Android: Kotlin, Jetpack Compose, Media3 ExoPlayer; min API 26, target API 36.
 - Core: independent Kotlin/JVM module with portable models and conservative matching logic.
 - Playlist format: v1 JSON compatible with the Python POC provided on 24 October 2026.
 - CI: GitHub Actions, Gradle 8.13, Android Gradle Plugin 8.11.1, JDK 17.
@@ -58,6 +58,14 @@ create the QA keystore locally without placing a key or password in the repo.
 Do not delete the previous installation without exporting playlists if they
 matter; **switching from old runner-debug APKs to QA-signed APKs can require a
 one-time uninstall** and will delete local application storage.
+
+For release-readiness testing, the same prerelease can also contain a **QA-signed
+R8/minified APK** (`app-qa-optimized.apk`) for exercising release-like code on
+a phone, plus an **unsigned preparatory AAB** (`app-release-unsigned.aab`).
+Both APKs share the persistent QA certificate and application ID. The AAB
+is **not** signed with a Play upload key and must never be uploaded to Play as-is.
+See [release gates](docs/PLAY_STORE_READINESS.md) and
+[privacy policy draft](PRIVACY.md).
 
 The source repository stays public under the MIT license. PR #1 remains
 draft: public test APKs are not stable releases or Play Store publication.

@@ -72,6 +72,7 @@ jobs:
                           group = "dex"
                       elif name.startswith(("lib/", "base/lib/")):
                           group = "native"
+                          print(f"NATIVE_LIBRARY {label} name={name} size={entry.file_size}")
                       elif name.startswith(("res/", "base/res/")):
                           group = "resources"
                       elif name.startswith(("assets/", "base/assets/")):
@@ -167,6 +168,27 @@ jobs:
           grep 'Signer #1 certificate SHA-1 digest:' "$RUNNER_TEMP/qa-certificate.txt" \
             >> "$RUNNER_TEMP/qa-signing-info.txt"
 
+      # Prove the R8/shrunk binary is installable under the SAME QA certificate,
+      # allowing upgrade-in-place from the normal QA APK with no user-data reset.
+      # The release AAB is an unsigned preparatory build, NOT Play-upload-ready.
+      - name: Build optimized signed QA APK and unsigned preparatory AAB
+        if: steps.qa_signing.outputs.ready == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle :app:assembleQaOptimized :app:bundleRelease --no-daemon --stacktrace
+          OPT="app/build/outputs/apk/qaOptimized/app-qaOptimized.apk"
+          AAB="app/build/outputs/bundle/release/app-release.aab"
+          test -s "$OPT"
+          test -s "$AAB"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs \
+            "$OPT" > "$RUNNER_TEMP/qa-optimized-certificate.txt"
+          test "$(grep -m1 'Signer #1 certificate SHA-1 digest:' "$RUNNER_TEMP/qa-certificate.txt")" = \
+            "$(grep -m1 'Signer #1 certificate SHA-1 digest:' "$RUNNER_TEMP/qa-optimized-certificate.txt")"
+          cp "$OPT" "$RUNNER_TEMP/app-qa-optimized.apk"
+          cp "$AAB" "$RUNNER_TEMP/app-release-unsigned.aab"
+          sha256sum "$OPT" "$AAB"
+
       # GitHub Actions artifacts exceed the account's quota. Releases are the
       # public test channel. Publish only a *stable-signed* APK (no fallback).
       - name: Publish signed QA public prerelease
@@ -179,6 +201,10 @@ jobs:
           TAG="qa-${GITHUB_SHA:0:12}"
           APK="app/build/outputs/apk/qa/app-qa.apk"
           INFO="$RUNNER_TEMP/qa-signing-info.txt"
+          OPT="$RUNNER_TEMP/app-qa-optimized.apk"
+          AAB="$RUNNER_TEMP/app-release-unsigned.aab"
+          test -s "$OPT"
+          test -s "$AAB"
           if gh release view "$TAG" >/dev/null 2>&1; then
             if ! gh release view "$TAG" --json assets --jq '.assets[].name' | grep -Fxq 'app-qa.apk'; then
               gh release upload "$TAG" "$APK"
@@ -186,8 +212,14 @@ jobs:
             if ! gh release view "$TAG" --json assets --jq '.assets[].name' | grep -Fxq 'qa-signing-info.txt'; then
               gh release upload "$TAG" "$INFO#qa-signing-info.txt"
             fi
+            if ! gh release view "$TAG" --json assets --jq '.assets[].name' | grep -Fxq 'app-qa-optimized.apk'; then
+              gh release upload "$TAG" "$OPT"
+            fi
+            if ! gh release view "$TAG" --json assets --jq '.assets[].name' | grep -Fxq 'app-release-unsigned.aab'; then
+              gh release upload "$TAG" "$AAB"
+            fi
           else
-            gh release create "$TAG" "$APK" "$INFO#qa-signing-info.txt" \
+            gh release create "$TAG" "$APK" "$INFO#qa-signing-info.txt" "$OPT" "$AAB" \
               --prerelease --target "$GITHUB_SHA" \
               --title "Open Music stable-signed QA $TAG" \
               --notes "Public Android QA only, signed with the persistent QA certificate (not production). OAuth/device-to-device sync still requires a Google Cloud Android OAuth client and live QA. The public certificate SHA-1 is in qa-signing-info.txt. No audio is uploaded. No Play Store or main merge."
@@ -196,3 +228,5 @@ jobs:
             --jq '{url, isDraft, isPrerelease, assetNames: [.assets[].name]}'
           test "$(gh release view "$TAG" --json assets --jq '[.assets[].name | select(. == "app-qa.apk")] | length')" = "1"
           test "$(gh release view "$TAG" --json assets --jq '[.assets[].name | select(. == "qa-signing-info.txt")] | length')" = "1"
+          test "$(gh release view "$TAG" --json assets --jq '[.assets[].name | select(. == "app-qa-optimized.apk")] | length')" = "1"
+          test "$(gh release view "$TAG" --json assets --jq '[.assets[].name | select(. == "app-release-unsigned.aab")] | length')" = "1"
