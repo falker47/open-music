@@ -38,6 +38,52 @@ jobs:
       - name: Test core and assemble ordinary debug APK
         run: gradle :core:test :app:assembleDebug --no-daemon --stacktrace
 
+      # Measure the existing unoptimized release packaging before enabling R8.
+      # PR-only: no upload, signing key, or Play publishing is involved.
+      - name: Measure unoptimized release candidates (baseline)
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle :app:assembleRelease :app:bundleRelease --no-daemon --stacktrace
+          python3 - <<'PY'
+          from collections import defaultdict
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          outputs = {
+              "debug_apk": "app/build/outputs/apk/debug/*.apk",
+              "release_apk": "app/build/outputs/apk/release/*.apk",
+              "release_aab": "app/build/outputs/bundle/release/*.aab",
+          }
+          for label, pattern in outputs.items():
+              matches = list(Path(".").glob(pattern))
+              if len(matches) != 1:
+                  raise ValueError(f"Expected exactly one {label}: {matches}")
+              path = matches[0]
+              print(f"SIZE_METRIC {label} bytes={path.stat().st_size} file={path.name}")
+              groups = defaultdict(int)
+              with ZipFile(path) as package:
+                  for entry in package.infolist():
+                      if entry.is_dir():
+                          continue
+                      name = entry.filename
+                      if name.endswith(".dex"):
+                          group = "dex"
+                      elif name.startswith(("lib/", "base/lib/")):
+                          group = "native"
+                      elif name.startswith(("res/", "base/res/")):
+                          group = "resources"
+                      elif name.startswith(("assets/", "base/assets/")):
+                          group = "assets"
+                      else:
+                          group = "other"
+                      groups[group] += entry.compress_size
+              print(f"SIZE_CONTENT {label} " + " ".join(
+                  f"{group}={size}" for group, size in sorted(groups.items())
+              ))
+          PY
+
       # PRs and runs without the owner's key exercise the QA variant with an
       # ephemeral certificate, but NEVER publish those incompatible APKs.
       # The single repository secret is available only to the trusted push job.
