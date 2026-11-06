@@ -113,3 +113,45 @@ Neither lrc.red, LRCLIB nor LRCGET currently establishes a verified blanket subl
 **Massive download:** BLOCKED, not partial completion. Do not transform the on-play cache into an 800-track background downloader or evade lrc.red's documented capacity restriction. Only revisit when a separate zero-cost provider explicitly authorizes both this access pattern and underlying lyric content rights.
 
 **Release gate:** Leave PR #1 Draft and public automatic retrieval disabled until permissions and platform compliance are independently resolved. No merge to main or Play release based on this groundwork.
+
+
+## Italian/EU rights analysis — 6 November 2026 (public-source review)
+
+**Decision (release gate): no universal free permission for display and offline storage of ordinary copyrighted commercial lyrics has been independently verified.** Keep remote retrieval unavailable in the public player. The existing lrc.red integration remains inactive; the QA APK is not proof of the feature. No wholesale download, scraping, backend or redistribution. This section is product-risk research, not a definitive legal opinion.
+
+### Different acts, different legal questions
+
+| Operation | Practical assessment |
+| --- | --- |
+| Distribute Open Music without lyrics bundled | Not itself a distribution of lyrics; ordinary app/player code is distinct from content licensing. |
+| A user device requests one lyric from lrc.red | API access is permitted non-commercially by the provider, on demand. Provider permission is **not** a copyright license for third-party song text. |
+| Privately show a fetched song lyric on the device | Not necessarily a public communication or independently unlawful just because it is on screen. However, the text remains protected, and the legality of obtaining, reproducing and displaying it depends on source authorization, the specific facts and any applicable exceptions. No blanket permission established for the app's intended general-purpose behavior. |
+| Keep an offline private copy | A persistent reproduction (not merely transient technical caching). Source-specific lyrics permission or a demonstrably applicable statutory exception is needed. The provider allows caching as an API matter but cannot sublicense the words. |
+| Redistribute lyrics, centralize them, bundle them, share/export them | Distinct copying/distribution risk; **not supported** or authorized in this project. |
+| Synchronize scrolling text with playback | Timing UX alone does not create a new license. For karaoke, video, adaptation or synchronization rights beyond timed display, assess separately; do not presume that display permission covers all variants. |
+
+Primary legal sources:
+- [SIAE GOAL online music conditions, **Vers. 1_2026**, arts. 7.4(b), 7.5](https://d2aod8qfhzlk6j.cloudfront.net/SITOIS/SIAE_CGL_Musica_Utilizzazioni_Online_GOAL_a917ec7db5.pdf): graphic reproduction, on-screen display, downloading, printing of lyrics and karaoke text scrolling are expressly **excluded** from this particular license because SIAE does not administer those rights under it; the licensee must seek the relevant rightsholder's prior authorization. The document also says mere technical transport, caching or providing technical means does not *by itself* make a Digital Service Provider (art. 1(g)); this classification rule is **not** an affirmative copyright permission.
+- [Italy, Law 633/1941, consolidated](https://www.normattiva.it/eli/id/1941/07/16/041U0633/CONSOLIDATED/20260612), including reproduction rights and [art. 71-sexies](https://def.finanze.it/DocTribFrontend/getAttoNormativoDetail.do?ACTION=getArticolo&codiceOrdinamento=0000000000000719999900006000000000000000000000000000000000000000000000000000000000000000000000000000000000&id=%7B012E634A-9F52-4452-B7F7-980D83EDE0C6%7D), which specifically concerns private copying of **phonograms/videograms** and does not provide a general blanket authorization to download separate literary lyrics from a web API.
+- [Directive 2001/29/EC, Article 5(1)](https://eur-lex.europa.eu/legal-content/IT/TXT/?uri=CELEX%3A32001L0029): temporary, incidental, integral technical reproductions only where enabling network intermediary transmission or a **lawful use**; does not generally encompass indefinitely retained offline lyric copies. Article 5(2)(b) permits Member State personal-copying exceptions subject to conditions, rather than a general cross-EU authorization for a distributed lyrics app.
+- [Google Play Intellectual Property policy](https://support.google.com/googleplay/android-developer/answer/9888072?hl=en): copyright infringement and encouragement of infringement are restricted, and developers may be asked to demonstrate rights. A text-free APK is not automatically noncompliant; the proposed automatically enabled third-party feature needs a separately defensible basis.
+
+The **device-only** design removes developer hosting and public redistribution but cannot independently prove the lawful origin, display and retention of every fetched lyric; nor does the fact that users supply their own audio file automatically authorize lyric reproduction from a separate web service. This is an unresolved legal clearance gate, **not** a finding that every individual act of private viewing must be infringing.
+
+### Free-source and repertoire limits (6 November 2026)
+
+- **lrc.red:** maintainer expressly permits free noncommercial API access, per-song requests and indefinite app-private cache with credit; **does not grant content copyrights**. Do not prefetch an entire library. Actual fraction of a real user's commercial repertoire with legally sublicensable texts: **not verified**.
+- **LRCLIB/LRCGET:** open public lyrics endpoint and open-source client; open-source code license is not an explicit blanket permission for copyright-protected contributed words. No verified rights bundle for third-party public Android display plus offline retention. LRCGET's bulk functionality must not be treated as authorization for Open Music to perform batch downloads.
+- **Better Lyrics and other aggregators:** technical access, cached responses or timings are not sufficient proof of underlying rights, territorial coverage and perpetual retention terms.
+- **Musixmatch / LyricFind:** licensed-catalog businesses; no publicly established **zero-cost, no-server, open Android client** permission for full commercial lyrics **and offline cache**. Written free-use and rights coverage terms are being explored. **UMPG** controls only its actual authorized shares/work, not all music worldwide.
+- **Explicitly open/per-work repertoire:** e.g. [PubDomainOnly](https://github.com/kennethyork/PubDomainOnly) describes a 4,987-item corpus (3,653 declared CC0 originals and 1,334 US-focused public-domain examples). Individual lyric copyright status, creator rights, Italian territory, correspondence to commercial recordings and timing are **not independently verified**. This is not a substitute for the user's normal commercial catalog. **No responsible percentage coverage** of a user library can be estimated from this count, and no arbitrary commercial track is thereby authorized.
+
+### Minimum actionable clearance for possible future integration
+
+For each allowed source/territory/work or bounded catalog, obtain **written provenance** that covers: (1) provider HTTP QUERY rights; (2) full-text in-app DISPLAY of third-party words, including the specific requested rendering; (3) optional app-private STORE_OFFLINE rights with duration/deletion/revocation; (4) attribution, API limits and downstream rights for coauthors/shares. Ambiguous or absent proof => **deny**. User-triggered per-playing-track fetch, strict artist/title/duration identity matching, local no-backup cache, opt-in offline storage and a visible lrc.red attribution only after cleared. No unqualified unrestricted fetch flag, no default grant, no library-wide prefetch.
+
+### Rights outreach status (non-binding; no commercial commitments)
+
+On 6 November 2026, exploratory inquiries were sent to official contacts at **LyricFind**, **Universal Music Publishing Group** and **Musixmatch**, requesting an expressly free noncommercial Android permission for both lyrics display and offline caching, with territory/coverage/key restrictions. No rights grant or substantive response was received at this checkpoint. A published SIAE online licensing mailbox rejected delivery with **SMTP 550 5.1.10 RecipientNotFound**; SIAE's public help form could not be submitted due to reCAPTCHA; a separate public SIAE departmental contact was asked to route the query to the proper lyrics-rights office. All original correspondence and delivery diagnostics remain in the developer's private email, not in this repository. Do not describe an outgoing inquiry as a license or successful SIAE submission.
+
+**Status:** Rights clearance pending. Internet Lyrics UI **blocked**, bulk retrieval **blocked**, PR **Draft**, no merge/Play publication, no new live-device QA claim. A documented rights grant or a separately well-supported lawful exception must precede activation and device-level tests.
