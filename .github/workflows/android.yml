@@ -36,7 +36,7 @@ jobs:
         with:
           gradle-version: "8.13"
       - name: Test core and assemble ordinary debug APK
-        run: gradle :core:test :app:assembleDebug --no-daemon --stacktrace
+        run: gradle :core:test :app:testDebugUnitTest :app:assembleDebug --no-daemon --stacktrace
 
       # Record comparable release package sizes and compressed content after each change.
       # PR-only: no upload, signing key, or Play publishing is involved.

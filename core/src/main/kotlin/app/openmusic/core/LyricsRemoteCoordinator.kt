@@ -49,7 +49,7 @@ class LyricsPrivateCache(private val root: File) {
         val digest = MessageDigest.getInstance("SHA-256")
             .digest(key.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it.toInt() and 0xff) }
-        return File(directory, "$" + "{digest}.bin")
+        return File(directory, "$digest.bin")
     }
 
     private fun DataOutputStream.putText(value: String?) {

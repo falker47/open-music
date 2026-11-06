@@ -24,7 +24,7 @@ class LrcRedLyricsProviderTest {
 
     @Test fun findsOnlyExactlyMatchedEditionAndFetchesOnlyItsLyrics() = runBlocking {
         val http = FakeHttp(mapOf("/search.json?" to hits,
-            "/s/GBABC2600001.lrc" to "[00:01.20] First line\\n[00:03.50] Second line"))
+            "/s/GBABC2600001.lrc" to "[00:01.20] First line\n[00:03.50] Second line"))
         val found = LrcRedLyricsProvider(http).find(track)
         assertEquals(LyricsMatchKind.FOUND, LyricsCandidateResolver.select(track, found).kind)
         assertEquals(2, http.paths.size)
@@ -51,7 +51,7 @@ class LrcRedLyricsProviderTest {
         val http = FakeHttp(mapOf("/search.json?" to hits,
             "/s/GBABC2600001.lrc" to null, "/s/GBABC2600001.ttml" to ttml))
         val found = LrcRedLyricsProvider(http).find(track)
-        assertEquals("First line\\nSecond line", found.first().plainLyrics)
+        assertEquals("First line\nSecond line", found.first().plainLyrics)
         assertNull(found.first().syncedLyrics)
         assertEquals(3, http.paths.size)
     }
