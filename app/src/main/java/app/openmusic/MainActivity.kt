@@ -171,7 +171,9 @@ private fun OpenMusicApp() {
         scope.launch { snackbar.showSnackbar(message) }
     }
 
-    val audioBackup = rememberAudioBackupActions(audioFiles, manualKinds, scanGeneration) {
+    val audioBackup = rememberAudioBackupActions(
+        audioFiles, manualKinds, scanGeneration, cloudLinked,
+    ) {
         message -> notifyUser(message)
     }
 
@@ -412,6 +414,7 @@ private fun OpenMusicApp() {
             scope.launch {
                 try {
                     withContext(Dispatchers.IO) { cloudCoordinator.disconnect() }
+                    audioBackup.onDisableAutoBackup()
                     cloudState = withContext(Dispatchers.IO) { cloudJournal.load() }
                     cloudSyncError = null
                     cloudChoices = emptyMap()

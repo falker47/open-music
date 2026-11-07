@@ -26,7 +26,8 @@ class AudioBackupPlannerTest {
         val remote = manifest(file("song.mp3", "first", "remote-one"))
         val next = AudioBackupPlanner.planUpload(listOf(file("song.mp3", "second")), remote).single()
         assertEquals(AudioBackupDisposition.RENAME_ON_UPLOAD, next.disposition)
-        assertTrue(next.proposedRemoteName.startsWith("song.mp3 ("))
+        assertTrue(next.proposedRemoteName.startsWith("song ("))
+        assertTrue(next.proposedRemoteName.endsWith(".mp3"))
         assertEquals(AudioBackupPlanner.planUpload(listOf(file("song.mp3", "second")), remote)
             .single().proposedRemoteName, next.proposedRemoteName)
     }
@@ -92,6 +93,13 @@ class AudioBackupPlannerTest {
                 manifest(file("one.mp3", "first", "same"), file("two.mp3", "second", "same")),
                 "folder-123", "account-abc")
         }
+    }
+
+    @Test fun legacyCloudNameRestoresWithPlayableAudioExtension() {
+        val song = file("song.flac", "same")
+        val oldName = "song.flac (" + song.sha256.take(12) + ")"
+        val restored = AudioBackupPlanner.safeRestoreName(song.copy(name = oldName), emptySet())
+        assertEquals("song (" + song.sha256.take(12) + ").flac", restored)
     }
 
     @Test fun restoredNameKeepsAudioExtensionWhenItConflicts() {

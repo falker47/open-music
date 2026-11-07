@@ -48,6 +48,7 @@ internal fun rememberAudioBackupActions(
     audioFiles: List<AudioFile>,
     manualKinds: Map<String, ManualAudioOverride>,
     scanGeneration: Int,
+    cloudLinked: Boolean,
     onMessage: (String) -> Unit,
 ): AudioBackupActions {
     val context = LocalContext.current
@@ -62,8 +63,13 @@ internal fun rememberAudioBackupActions(
         }.distinctBy { it.uri }
     }
     val libraryHash = remember(libraryMusic) { librarySignature(libraryMusic) }
+    // noBackupFilesDir does not migrate to a new device with Android Auto Backup:
+    // an old SharedPreferences toggle alone is NOT consent to upload that device's audio.
+    val consentMarker = remember(context) {
+        java.io.File(context.noBackupFilesDir, "open-music-audio-upload-consent-v1")
+    }
     var autoEnabled by remember {
-        mutableStateOf(preferences.getBoolean("uploadOnScan", false))
+        mutableStateOf(preferences.getBoolean("uploadOnScan", false) && consentMarker.isFile)
     }
     var enableAutoAfterUpload by remember { mutableStateOf(false) }
     var libraryMode by remember { mutableStateOf(false) }
@@ -81,6 +87,7 @@ internal fun rememberAudioBackupActions(
     var stagedTemp by remember { mutableStateOf<java.io.File?>(null) }
     var action by remember { mutableStateOf(BackupCommand.NONE) }
     var busy by remember { mutableStateOf(false) }
+    var authorizing by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf("") }
     var pendingJob by remember { mutableStateOf<Job?>(null) }
 
@@ -129,6 +136,7 @@ internal fun rememberAudioBackupActions(
         onAuthorized = { token ->
             val requested = action
             action = BackupCommand.NONE
+            authorizing = false
             if (requested != BackupCommand.NONE && !busy) {
                 pendingJob = scope.launch {
                     busy = true
@@ -149,7 +157,10 @@ internal fun rememberAudioBackupActions(
                                 }
                                 if (requested != BackupCommand.UPLOAD) {
                                     if (requested == BackupCommand.UPLOAD_LIBRARY) {
-                                        autoEnabled = enableAutoAfterUpload
+                                        if (enableAutoAfterUpload) {
+                                            runCatching { consentMarker.writeText("enabled") }
+                                        } else consentMarker.delete()
+                                        autoEnabled = enableAutoAfterUpload && consentMarker.isFile
                                     }
                                     preferences.edit()
                                         .putBoolean("uploadOnScan", autoEnabled)
@@ -206,25 +217,36 @@ internal fun rememberAudioBackupActions(
                 }
             }
         },
-        onError = { error -> action = BackupCommand.NONE; latestMessage(error) },
+        onError = {
+            error ->
+            action = BackupCommand.NONE
+            authorizing = false
+            latestMessage(error)
+        },
     )
+
+    fun start(command: BackupCommand) {
+        if (busy || authorizing) return
+        authorizing = true
+        action = command
+        authorization()
+    }
 
     // Consent is persisted; after a future successful MediaStore scan an
     // opted-in user can upload new or modified tracks while the app is open.
     // Network remains Wi-Fi/unmetered only, without storing OAuth tokens.
-    LaunchedEffect(scanGeneration, autoEnabled, libraryHash) {
-        if (scanGeneration > 0 && autoEnabled &&
+    LaunchedEffect(scanGeneration, autoEnabled, cloudLinked) {
+        if (scanGeneration > 0 && autoEnabled && cloudLinked &&
             lastAutoAttempt != scanGeneration &&
             libraryMusic.size in 1..5000 &&
             preferences.getString("lastSuccessfulLibraryHash", null) != libraryHash &&
-            !busy) {
+            !busy && !authorizing) {
             lastAutoAttempt = scanGeneration
             selectedUris = libraryMusic.map { Uri.parse(it.uri) }
             savedLibraryHash = libraryHash
             allowMetered = false
             libraryMode = true
-            action = BackupCommand.AUTO_UPLOAD
-            authorization()
+            start(BackupCommand.AUTO_UPLOAD)
         }
     }
 
@@ -286,9 +308,8 @@ internal fun rememberAudioBackupActions(
                     confirmUpload = false
                     if (libraryMode) {
                         savedLibraryHash = libraryHash
-                        action = BackupCommand.UPLOAD_LIBRARY
-                    } else action = BackupCommand.UPLOAD
-                    authorization()
+                        start(BackupCommand.UPLOAD_LIBRARY)
+                    } else start(BackupCommand.UPLOAD)
                 }) { Text("Carica file") }
             },
             dismissButton = {
@@ -314,8 +335,7 @@ internal fun rememberAudioBackupActions(
                                 .clickable {
                                     showRemote = false
                                     selectedRemote = file
-                                    action = BackupCommand.STAGE_RESTORE
-                                    authorization()
+                                    start(BackupCommand.STAGE_RESTORE)
                                 }
                                 .padding(vertical = 14.dp),
                         )
@@ -355,8 +375,7 @@ internal fun rememberAudioBackupActions(
             confirmButton = {
                 TextButton(onClick = {
                     confirmRestoreAll = false
-                    action = BackupCommand.RESTORE_LIBRARY
-                    authorization()
+                    start(BackupCommand.RESTORE_LIBRARY)
                 }) { Text("Scarica tutti") }
             },
             dismissButton = {
@@ -385,9 +404,11 @@ internal fun rememberAudioBackupActions(
     }
 
     return AudioBackupActions(
-        onSelectForBackup = { if (!busy) selector.launch(arrayOf("audio/*")) },
+        onSelectForBackup = {
+            if (!busy && !authorizing) selector.launch(arrayOf("audio/*"))
+        },
         onBackupLibrary = {
-            if (!busy) {
+            if (!busy && !authorizing) {
                 if (libraryMusic.isEmpty()) latestMessage("Scansiona prima la libreria Musica")
                 else if (libraryMusic.size > 5000)
                     latestMessage("Backup intera libreria limitato a 5000 brani per volta")
@@ -402,19 +423,15 @@ internal fun rememberAudioBackupActions(
             }
         },
         onBrowseRestores = {
-            if (!busy) {
-                action = BackupCommand.LIST_REMOTE
-                authorization()
-            }
+            if (!busy && !authorizing) start(BackupCommand.LIST_REMOTE)
         },
         onDisableAutoBackup = {
-            if (!busy) {
-                autoEnabled = false
-                preferences.edit().putBoolean("uploadOnScan", false).apply()
-                latestMessage("Caricamento automatico dei nuovi brani disattivato")
-            }
+            autoEnabled = false
+            consentMarker.delete()
+            preferences.edit().putBoolean("uploadOnScan", false).apply()
+            latestMessage("Caricamento automatico dei nuovi brani disattivato")
         },
         autoBackupEnabled = autoEnabled,
-        busy = busy,
+        busy = busy || authorizing,
     )
 }
