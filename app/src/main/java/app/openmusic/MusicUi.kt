@@ -286,7 +286,9 @@ internal fun MusicPlaylistHeader(
     driveStatus: DriveUiStatus, showCloudMenu: Boolean,
     onDrive: () -> Unit, onShowCloudMenu: () -> Unit,
     onDismissCloudMenu: () -> Unit, onDisconnect: () -> Unit,
-    onBackupAudio: () -> Unit, onRestoreAudio: () -> Unit,
+    onBackupAudio: () -> Unit, onBackupLibrary: () -> Unit,
+    onRestoreAudio: () -> Unit, autoAudioBackupEnabled: Boolean,
+    onDisableAutoAudioBackup: () -> Unit,
 ) {
     BoxWithConstraints(
         Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 14.dp),
@@ -315,7 +317,10 @@ internal fun MusicPlaylistHeader(
                 onShowCloudMenu = onShowCloudMenu,
                 onDismissCloudMenu = onDismissCloudMenu,
                 onDisconnect = onDisconnect,
-                onBackupAudio = onBackupAudio, onRestoreAudio = onRestoreAudio,
+                onBackupAudio = onBackupAudio, onBackupLibrary = onBackupLibrary,
+                onRestoreAudio = onRestoreAudio,
+                autoAudioBackupEnabled = autoAudioBackupEnabled,
+                onDisableAutoAudioBackup = onDisableAutoAudioBackup,
             )
         }
     }
@@ -328,7 +333,9 @@ private fun MusicPlaylistDriveCard(
     driveStatus: DriveUiStatus, showCloudMenu: Boolean,
     onDrive: () -> Unit, onShowCloudMenu: () -> Unit,
     onDismissCloudMenu: () -> Unit, onDisconnect: () -> Unit,
-    onBackupAudio: () -> Unit, onRestoreAudio: () -> Unit,
+    onBackupAudio: () -> Unit, onBackupLibrary: () -> Unit,
+    onRestoreAudio: () -> Unit, autoAudioBackupEnabled: Boolean,
+    onDisableAutoAudioBackup: () -> Unit,
 ) {
     var showStatusDetails by remember { mutableStateOf(false) }
     val enlargedFont = LocalDensity.current.fontScale > 1.35f
@@ -399,7 +406,8 @@ private fun MusicPlaylistDriveCard(
                 MusicDriveMenuButton(
                     enabled, showCloudMenu, onShowCloudMenu,
                     onDismissCloudMenu, onDisconnect,
-                    onBackupAudio, onRestoreAudio,
+                    onBackupAudio, onBackupLibrary, onRestoreAudio,
+                    autoAudioBackupEnabled, onDisableAutoAudioBackup,
                 )
             }
         }
@@ -439,7 +447,9 @@ private fun MusicDriveSyncButton(
 private fun MusicDriveMenuButton(
     enabled: Boolean, showCloudMenu: Boolean, onShowCloudMenu: () -> Unit,
     onDismissCloudMenu: () -> Unit, onDisconnect: () -> Unit,
-    onBackupAudio: () -> Unit, onRestoreAudio: () -> Unit,
+    onBackupAudio: () -> Unit, onBackupLibrary: () -> Unit,
+    onRestoreAudio: () -> Unit, autoAudioBackupEnabled: Boolean,
+    onDisableAutoAudioBackup: () -> Unit,
 ) {
     Box {
         IconButton(
@@ -450,6 +460,11 @@ private fun MusicDriveMenuButton(
         }
         DropdownMenu(expanded = showCloudMenu, onDismissRequest = onDismissCloudMenu) {
             DropdownMenuItem(
+                text = { Text("Backup intera libreria musicale…") },
+                onClick = { onDismissCloudMenu(); onBackupLibrary() },
+                leadingIcon = { Icon(Icons.Rounded.Cloud, contentDescription = null) },
+            )
+            DropdownMenuItem(
                 text = { Text("Backup file audio…") },
                 onClick = { onDismissCloudMenu(); onBackupAudio() },
                 leadingIcon = { Icon(Icons.Rounded.Cloud, contentDescription = null) },
@@ -459,6 +474,12 @@ private fun MusicDriveMenuButton(
                 onClick = { onDismissCloudMenu(); onRestoreAudio() },
                 leadingIcon = { Icon(Icons.Rounded.FileDownload, contentDescription = null) },
             )
+            if (autoAudioBackupEnabled) {
+                DropdownMenuItem(
+                    text = { Text("Disattiva backup automatico dei nuovi brani") },
+                    onClick = { onDismissCloudMenu(); onDisableAutoAudioBackup() },
+                )
+            }
             HorizontalDivider()
             DropdownMenuItem(text = { Text("Scollega Drive") }, onClick = onDisconnect)
         }
