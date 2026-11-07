@@ -316,10 +316,11 @@ internal class AudioBackupWorkflow(
                 var created: DocumentFile? = null
                 try {
                     currentCoroutineContext().ensureActive()
-                    created = target.createFile(file.mimeType, name)
+                    val newDoc = target.createFile(file.mimeType, name)
                         ?: throw IOException("Impossibile creare " + name)
-                    restoreToDocument(file, temporary, created.uri)
-                    val actualName = created.name ?: name
+                    created = newDoc
+                    restoreToDocument(file, temporary, newDoc.uri)
+                    val actualName = newDoc.name ?: name
                     takenNames.add(actualName)
                     existing[actualName] = created
                     restored++
