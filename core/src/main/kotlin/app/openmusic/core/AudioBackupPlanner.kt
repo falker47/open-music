@@ -101,6 +101,30 @@ object AudioBackupPlanner {
         }
     }
 
+    /**
+     * Never overwrite a document with a matching filename: keep playable
+     * audio extensions and insert a stable content hint before the extension.
+     */
+    fun safeRestoreName(file: AudioBackupFile, existingNames: Set<String>): String {
+        checkFile(file)
+        if (file.name !in existingNames) return file.name
+        val dot = file.name.lastIndexOf('.')
+        val extension = if (dot > 0 && file.name.length - dot <= 9)
+            file.name.substring(dot) else ""
+        val stem = file.name.dropLast(extension.length)
+        val suffix = " (" + file.sha256.take(12) + ")"
+        var attempt = 0
+        while (attempt < 100_000) {
+            val collision = if (attempt == 0) "" else "-" + attempt
+            val prefixLength = 240 - suffix.length - collision.length - extension.length
+            require(prefixLength > 0) { "Audio filename cannot be restored safely" }
+            val candidate = stem.take(prefixLength) + suffix + collision + extension
+            if (candidate !in existingNames) return candidate
+            attempt++
+        }
+        throw IllegalArgumentException("Too many filename collisions")
+    }
+
     /** A retry may start only at a known committed offset from the remote session. */
     fun remainingBytes(totalSize: Long, confirmedOffset: Long): Long {
         require(totalSize >= 0 && confirmedOffset in 0..totalSize) { "Invalid upload offset" }

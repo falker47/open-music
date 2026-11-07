@@ -112,8 +112,8 @@ internal class DriveAudioBackupGateway(private val accessToken: String) {
         return result
     }
 
-    /** Persist returned ID: never identify a folder by its name alone. */
-    fun findOrCreateFolder(previousFolderId: String?): String {
+    /** Search only app-created Drive folders visible under drive.file. */
+    fun findExistingFolder(previousFolderId: String?): String? {
         if (!previousFolderId.isNullOrBlank()) {
             val connection = connect(
                 fileBase + "/" + encode(previousFolderId) +
@@ -121,11 +121,41 @@ internal class DriveAudioBackupGateway(private val accessToken: String) {
             try {
                 val item = JSONObject(readSuccess(connection))
                 require(item.getString("id") == previousFolderId &&
+                    item.getString("name") == "Open Music Audio Backup" &&
                     item.getString("mimeType") == "application/vnd.google-apps.folder" &&
                     !item.optBoolean("trashed")) { "Saved backup folder invalid" }
                 return previousFolderId
             } finally { connection.disconnect() }
         }
+        val query = "name = 'Open Music Audio Backup' and " +
+            "mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+        val candidates = mutableListOf<String>()
+        var page: String? = null
+        do {
+            val args = mutableListOf("q=" + encode(query), "pageSize=100",
+                "fields=" + encode("nextPageToken,files(id,name,mimeType,trashed)"))
+            if (page != null) args.add("pageToken=" + encode(page!!))
+            val connection = connect(fileBase + "?" + args.joinToString("&"), "GET")
+            val response = try { JSONObject(readSuccess(connection)) }
+                finally { connection.disconnect() }
+            val found = response.getJSONArray("files")
+            repeat(found.length()) { index ->
+                val item = found.getJSONObject(index)
+                if (item.optString("name") == "Open Music Audio Backup" &&
+                    item.optString("mimeType") == "application/vnd.google-apps.folder" &&
+                    !item.optBoolean("trashed"))
+                    candidates.add(item.getString("id"))
+            }
+            if (candidates.size > 1)
+                throw IOException("Più cartelle Open Music Audio Backup: scelta ambigua")
+            page = response.optString("nextPageToken").takeIf { it.isNotBlank() }
+        } while (page != null)
+        return candidates.singleOrNull()
+    }
+
+    /** Persist returned ID, discover an existing app-created folder before creating. */
+    fun findOrCreateFolder(previousFolderId: String?): String {
+        findExistingFolder(previousFolderId)?.let { return it }
         val connection = connect(fileBase + "?fields=id", "POST")
         try {
             val body = JSONObject()

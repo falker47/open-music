@@ -5,6 +5,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.provider.OpenableColumns
+import androidx.documentfile.provider.DocumentFile
 import app.openmusic.core.AudioBackupDisposition
 import app.openmusic.core.AudioBackupFile
 import app.openmusic.core.AudioBackupFilename
@@ -28,6 +29,7 @@ internal class AudioBackupWorkflow(
     private val gateway: DriveAudioBackupGateway,
 ) {
     data class BackupSummary(val uploaded: Int, val deduplicated: Int)
+    data class RestoreSummary(val downloaded: Int, val alreadyPresent: Int)
     private val preferences = context.getSharedPreferences(
         "open-music-audio-backup-v1", Context.MODE_PRIVATE)
 
@@ -50,8 +52,10 @@ internal class AudioBackupWorkflow(
         if (previousAccount != null && previousAccount != account)
             throw IOException("Account Drive diverso: backup non modificato")
         val previousFolder = preferences.getString("folderId", null)
-        if (!create && previousFolder == null) return null
-        val folderId = gateway.findOrCreateFolder(previousFolder)
+        // A second device has no local folder ID, but must discover the existing
+        // app-created folder without accidentally creating an empty backup.
+        val folderId = if (create) gateway.findOrCreateFolder(previousFolder)
+            else gateway.findExistingFolder(previousFolder) ?: return null
         if (!preferences.edit()
                 .putString("accountMarker", account)
                 .putString("folderId", folderId)
@@ -159,24 +163,44 @@ internal class AudioBackupWorkflow(
         }
     }
 
-    /** 1–40 explicitly picked files; no bulk scan or startup upload. */
+    /** Explicitly selected files retain the original 40-file safety limit. */
     suspend fun backupSelected(
         selected: List<Uri>,
         allowMetered: Boolean,
         onProgress: (completed: Int, total: Int) -> Unit,
+    ): BackupSummary = backupFiles(selected, allowMetered, 40, onProgress)
+
+    /** Music-library transfer is a separate, explicitly confirmed operation. */
+    suspend fun backupLibrary(
+        localMusic: List<Uri>,
+        allowMetered: Boolean,
+        onProgress: (completed: Int, total: Int) -> Unit,
+    ): BackupSummary = backupFiles(localMusic, allowMetered, 5000, onProgress)
+
+    private suspend fun backupFiles(
+        selected: List<Uri>,
+        allowMetered: Boolean,
+        maxFiles: Int,
+        onProgress: (completed: Int, total: Int) -> Unit,
     ): BackupSummary = withContext(Dispatchers.IO) {
         val uris = selected.distinct()
-        require(uris.size in 1..40) { "Selezionare da 1 a 40 brani per operazione" }
+        require(uris.size in 1..maxFiles) {
+            "Operazione limitata a " + maxFiles + " file audio"
+        }
         validateNetwork(allowMetered)
         val (folderId, account) = folder(create = true)
             ?: throw IOException("Cartella backup non disponibile")
         val remote = gateway.listBackedUpFiles(folderId)
-        val local = uris.map { inspect(it) }
+        val local = uris.map { uri ->
+            currentCoroutineContext().ensureActive()
+            inspect(uri)
+        }
         val plans = AudioBackupPlanner.planUpload(
             local, AudioBackupManifest(1, folderId, account, remote))
         var added = 0
         var skipped = 0
         plans.forEachIndexed { index, item ->
+            currentCoroutineContext().ensureActive()
             when (item.disposition) {
                 AudioBackupDisposition.REMOTE_EXISTS,
                 AudioBackupDisposition.REUSE_LOCAL_CONTENT -> skipped++
@@ -184,7 +208,6 @@ internal class AudioBackupWorkflow(
                 AudioBackupDisposition.RENAME_ON_UPLOAD -> {
                     val payload = item.file.copy(name = item.proposedRemoteName)
                     upload(uris[index], payload, folderId)
-                    // Reported success requires a confirmed remote file ID.
                     added++
                 }
             }
@@ -235,4 +258,81 @@ internal class AudioBackupWorkflow(
                 throw IOException("Verifica SHA-256 del file ripristinato fallita")
         } finally { verifiedTemp.delete() }
     }
+    /**
+     * Restore all selected Drive records into a user-chosen SAF directory.
+     * Existing user documents are never overwritten or deleted. Every new
+     * document is verified before it can be counted as restored.
+     */
+    suspend fun restoreLibrary(
+        selected: List<AudioBackupFile>,
+        destinationTree: Uri,
+        allowMetered: Boolean,
+        onProgress: (completed: Int, total: Int) -> Unit,
+    ): RestoreSummary = withContext(Dispatchers.IO) {
+        require(selected.isNotEmpty() && selected.size <= 5000) {
+            "Ripristino limitato a 5000 brani per operazione"
+        }
+        require(destinationTree.scheme == "content") { "Scegli una cartella con Android" }
+        validateNetwork(allowMetered)
+        val (folderId, account) = folder(create = false)
+            ?: throw IOException("Nessun backup Drive disponibile")
+        val remote = gateway.listBackedUpFiles(folderId)
+        AudioBackupPlanner.requireValid(
+            AudioBackupManifest(1, folderId, account, remote), folderId, account)
+        val byId = remote.associateBy { it.remoteFileId }
+        selected.forEach { file ->
+            val current = byId[file.remoteFileId]
+            require(current != null && current.sha256 == file.sha256 &&
+                current.sizeBytes == file.sizeBytes && current.name == file.name) {
+                "Il contenuto Drive è cambiato, aggiorna l'elenco"
+            }
+        }
+        val target = DocumentFile.fromTreeUri(context, destinationTree)
+            ?: throw IOException("Cartella destinazione non accessibile")
+        require(target.isDirectory && target.canWrite()) {
+            "Cartella selezionata non scrivibile"
+        }
+        val existing = target.listFiles().filter { it.isFile && !it.name.isNullOrBlank() }
+            .associateBy { it.name!! }.toMutableMap()
+        val takenNames = existing.keys.toMutableSet()
+        val unique = selected.distinctBy { it.sha256 }
+        var restored = 0
+        var skipped = 0
+        unique.forEachIndexed { index, file ->
+            currentCoroutineContext().ensureActive()
+            val sameName = existing[file.name]
+            val exact = sameName != null && runCatching {
+                val source = context.contentResolver.openInputStream(sameName.uri)
+                    ?: return@runCatching false
+                AudioBackupPlanner.verifyDownloaded(file, source)
+            }.getOrDefault(false)
+            if (exact) {
+                skipped++
+            } else {
+                val name = AudioBackupPlanner.safeRestoreName(file, takenNames)
+                // Stage BEFORE creating a document, so a network failure leaves
+                // the user's destination untouched.
+                val temporary = gateway.stageVerifiedDownload(context, file)
+                var created: DocumentFile? = null
+                try {
+                    currentCoroutineContext().ensureActive()
+                    created = target.createFile(file.mimeType, name)
+                        ?: throw IOException("Impossibile creare " + name)
+                    restoreToDocument(file, temporary, created.uri)
+                    val actualName = created.name ?: name
+                    takenNames.add(actualName)
+                    existing[actualName] = created
+                    restored++
+                } catch (failure: Exception) {
+                    created?.delete() // only the new, incomplete document
+                    throw failure
+                } finally {
+                    temporary.delete()
+                }
+            }
+            withContext(Dispatchers.Main) { onProgress(index + 1, unique.size) }
+        }
+        RestoreSummary(restored, skipped)
+    }
+
 }
