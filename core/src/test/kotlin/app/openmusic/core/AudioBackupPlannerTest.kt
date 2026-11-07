@@ -93,4 +93,27 @@ class AudioBackupPlannerTest {
                 "folder-123", "account-abc")
         }
     }
+
+    @Test fun restoredNameKeepsAudioExtensionWhenItConflicts() {
+        val entry = file("song.mp3", "different")
+        assertEquals("song (" + entry.sha256.take(12) + ").mp3",
+            AudioBackupPlanner.safeRestoreName(entry, setOf("song.mp3")))
+    }
+
+    @Test fun restoredNameDoesNotOverwriteAnExistingCollisionSuffix() {
+        val entry = file("song.flac", "different")
+        val first = "song (" + entry.sha256.take(12) + ").flac"
+        assertEquals("song (" + entry.sha256.take(12) + ")-1.flac",
+            AudioBackupPlanner.safeRestoreName(entry, setOf("song.flac", first)))
+    }
+
+    @Test fun restoredNamePreservesOriginalWhenUnusedAndBoundsLongNames() {
+        val entry = file("song.mp3", "different")
+        assertEquals("song.mp3", AudioBackupPlanner.safeRestoreName(entry, emptySet()))
+        val longFile = entry.copy(name = "a".repeat(236) + ".mp3")
+        val restored = AudioBackupPlanner.safeRestoreName(longFile, setOf(longFile.name))
+        assertTrue(restored.length <= 240)
+        assertTrue(restored.endsWith(".mp3"))
+        assertNotEquals(longFile.name, restored)
+    }
 }
