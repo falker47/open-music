@@ -71,6 +71,8 @@ internal fun rememberAudioBackupActions(
     var autoEnabled by remember {
         mutableStateOf(preferences.getBoolean("uploadOnScan", false) && consentMarker.isFile)
     }
+    var wasCloudLinked by remember { mutableStateOf(cloudLinked) }
+    var offerDriveRestore by remember { mutableStateOf(false) }
     var enableAutoAfterUpload by remember { mutableStateOf(false) }
     var libraryMode by remember { mutableStateOf(false) }
     var restoreAllTree by remember { mutableStateOf<Uri?>(null) }
@@ -232,6 +234,14 @@ internal fun rememberAudioBackupActions(
         authorization()
     }
 
+    // Ask once immediately after playlist Drive changes from unlinked to linked.
+    // This is only a local offer; audio Drive OAuth/download need a separate
+    // affirmative choice. It does not run on every app startup.
+    LaunchedEffect(cloudLinked) {
+        if (!wasCloudLinked && cloudLinked) offerDriveRestore = true
+        wasCloudLinked = cloudLinked
+    }
+
     // Consent is persisted; after a future successful MediaStore scan an
     // opted-in user can upload new or modified tracks while the app is open.
     // Network remains Wi-Fi/unmetered only, without storing OAuth tokens.
@@ -260,6 +270,30 @@ internal fun rememberAudioBackupActions(
             allowMetered = false
             confirmUpload = true
         }
+    }
+
+    if (offerDriveRestore) {
+        AlertDialog(
+            onDismissRequest = { offerDriveRestore = false },
+            title = { Text("Scaricare la musica da Google Drive?") },
+            text = {
+                Text("Hai collegato Google Drive per le playlist. " +
+                    "Vuoi cercare il backup della tua musica per scaricarlo " +
+                    "anche su questo dispositivo? Nessun file sarà scaricato " +
+                    "senza una seconda conferma.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    offerDriveRestore = false
+                    start(BackupCommand.LIST_REMOTE)
+                }) { Text("Cerca musica") }
+            },
+            dismissButton = {
+                TextButton(onClick = { offerDriveRestore = false }) {
+                    Text("Non ora")
+                }
+            },
+        )
     }
 
     if (confirmUpload) {
