@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Retain the exact approved WebP artwork; provide safe dark margins in every mask. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/open_music_launcher"
+    android:insetLeft="12dp" android:insetRight="12dp"
+    android:insetTop="12dp" android:insetBottom="12dp" />
