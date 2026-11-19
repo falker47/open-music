@@ -81,15 +81,8 @@ object AudioBackupPlanner {
                     AudioBackupDecision(file, AudioBackupDisposition.REUSE_LOCAL_CONTENT,
                         file.name)
                 file.name in names -> {
-                    val suffix = " (" + file.sha256.take(12) + ")"
-                    val baseName = file.name.take(240 - suffix.length)
-                    var candidate = baseName + suffix
-                    var sequence = 1
-                    while (!names.add(candidate)) {
-                        val extra = "-" + sequence++
-                        candidate = file.name.take(240 - suffix.length - extra.length) +
-                            suffix + extra
-                    }
+                    val candidate = safeRestoreName(file, names)
+                    names.add(candidate)
                     AudioBackupDecision(file, AudioBackupDisposition.RENAME_ON_UPLOAD,
                         candidate)
                 }
@@ -99,6 +92,41 @@ object AudioBackupPlanner {
                 }
             }
         }
+    }
+
+    /**
+     * Never overwrite a document with a matching filename: keep playable
+     * audio extensions and insert a stable content hint before the extension.
+     */
+    fun safeRestoreName(file: AudioBackupFile, existingNames: Set<String>): String {
+        checkFile(file)
+        // Older backup revisions appended the hash after ".mp3"/".flac".
+        // Normalize that legacy name before using SAF so the restored
+        // document still has a playable audio file extension.
+        val legacy = Regex(
+            """^(.*)\.(mp3|flac|m4a|wav|ogg|opus|aac) \(([a-f0-9]{12})\)(-\d+)?$""",
+            RegexOption.IGNORE_CASE,
+        ).matchEntire(file.name)
+        val name = if (legacy == null) file.name else {
+            val (stem, extension, digest, sequence) = legacy.destructured
+            stem + " (" + digest + ")" + sequence + "." + extension
+        }
+        if (name !in existingNames) return name
+        val dot = name.lastIndexOf('.')
+        val extension = if (dot > 0 && name.length - dot <= 9)
+            name.substring(dot) else ""
+        val stem = name.dropLast(extension.length)
+        val suffix = " (" + file.sha256.take(12) + ")"
+        var attempt = 0
+        while (attempt < 100_000) {
+            val collision = if (attempt == 0) "" else "-" + attempt
+            val prefixLength = 240 - suffix.length - collision.length - extension.length
+            require(prefixLength > 0) { "Audio filename cannot be restored safely" }
+            val candidate = stem.take(prefixLength) + suffix + collision + extension
+            if (candidate !in existingNames) return candidate
+            attempt++
+        }
+        throw IllegalArgumentException("Too many filename collisions")
     }
 
     /** A retry may start only at a known committed offset from the remote session. */

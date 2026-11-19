@@ -104,6 +104,7 @@ private fun OpenMusicApp() {
     var verifying by remember { mutableStateOf(false) }
     var unreadableCount by remember { mutableIntStateOf(0) }
     var didScan by remember { mutableStateOf(false) }
+    var scanGeneration by remember { mutableIntStateOf(0) }
     var analysisJob by remember { mutableStateOf<Job?>(null) }
     var onlyMusic by rememberSaveable { mutableStateOf(true) }
     var playlists by remember { mutableStateOf(emptyList<PortablePlaylist>()) }
@@ -170,7 +171,11 @@ private fun OpenMusicApp() {
         scope.launch { snackbar.showSnackbar(message) }
     }
 
-    val audioBackup = rememberAudioBackupActions { message -> notifyUser(message) }
+    val audioBackup = rememberAudioBackupActions(
+        audioFiles, manualKinds, scanGeneration, cloudLinked,
+    ) {
+        message -> notifyUser(message)
+    }
 
     fun persist(updated: List<PortablePlaylist>): Boolean {
         return try {
@@ -325,6 +330,7 @@ private fun OpenMusicApp() {
                         found.size + " audio (nessuna playlist da verificare)"
                     notifyUser("Indicizzati " + found.size + " file audio")
                 }
+                scanGeneration++ // only a successfully completed scan triggers opted-in backup
             } catch (cancel: CancellationException) {
                 // Cancellation leaves entries unverified, never falsely missing.
                 throw cancel
@@ -408,6 +414,7 @@ private fun OpenMusicApp() {
             scope.launch {
                 try {
                     withContext(Dispatchers.IO) { cloudCoordinator.disconnect() }
+                    audioBackup.onDisableAutoBackup()
                     cloudState = withContext(Dispatchers.IO) { cloudJournal.load() }
                     cloudSyncError = null
                     cloudChoices = emptyMap()
@@ -1445,7 +1452,10 @@ private fun OpenMusicApp() {
                     onShowCloudMenu = { showCloudMenu = true },
                     onDismissCloudMenu = { showCloudMenu = false },
                     onBackupAudio = audioBackup.onSelectForBackup,
+                    onBackupLibrary = audioBackup.onBackupLibrary,
                     onRestoreAudio = audioBackup.onBrowseRestores,
+                    autoAudioBackupEnabled = audioBackup.autoBackupEnabled,
+                    onDisableAutoAudioBackup = audioBackup.onDisableAutoBackup,
                     onDisconnect = {
                         showCloudMenu = false
                         showCloudDisconnect = true
