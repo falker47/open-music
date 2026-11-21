@@ -3,10 +3,15 @@ package app.openmusic
 import android.content.Context
 import app.openmusic.core.AudioBackupFile
 import app.openmusic.core.AudioBackupPlanner
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import org.json.JSONException
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
@@ -16,7 +21,10 @@ import java.util.UUID
  * Separate drive.file adapter. No call from playlist sync or app startup.
  * A caller must acquire an explicit audio-backup OAuth grant.
  */
-internal class DriveAudioBackupGateway(private val accessToken: String) {
+internal class DriveAudioBackupGateway(
+    private val accessToken: String,
+    private val openConnection: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection },
+) {
     data class ChunkAck(val confirmedOffset: Long, val remoteFileId: String? = null)
     private val fileBase = "https://www.googleapis.com/drive/v3/files"
     private fun encode(value: String): String = URLEncoder.encode(value, "UTF-8")
@@ -31,7 +39,7 @@ internal class DriveAudioBackupGateway(private val accessToken: String) {
 
     private fun connect(url: String, method: String): HttpURLConnection {
         require(accessToken.isNotBlank()) { "Explicit drive.file authorization required" }
-        return (approvedUrl(url).openConnection() as HttpURLConnection).apply {
+        return openConnection(approvedUrl(url)).apply {
             requestMethod = method
             connectTimeout = 15_000
             readTimeout = 60_000
@@ -43,9 +51,13 @@ internal class DriveAudioBackupGateway(private val accessToken: String) {
 
     private fun readSuccess(connection: HttpURLConnection, limit: Int = 2_500_000): String {
         val status = connection.responseCode
-        if (status !in 200..299) throw IOException("Drive backup HTTP " + status)
+        if (status !in 200..299) throw httpFailure(connection, status)
+        return readBody(connection.inputStream, limit)
+    }
+
+    private fun readBody(stream: InputStream, limit: Int): String {
         val out = ByteArrayOutputStream()
-        connection.inputStream.use { input ->
+        stream.use { input ->
             val chunk = ByteArray(8192)
             while (true) {
                 val read = input.read(chunk)
@@ -55,6 +67,23 @@ internal class DriveAudioBackupGateway(private val accessToken: String) {
             }
         }
         return out.toString(Charsets.UTF_8.name())
+    }
+
+    private class UploadRejected(message: String) : IOException(message)
+
+    private fun httpFailure(connection: HttpURLConnection, status: Int): IOException {
+        if (status == 403) {
+            val reasons = try {
+                connection.errorStream?.let { stream ->
+                    JSONObject(readBody(stream, 16 * 1024)).optJSONObject("error")?.optJSONArray("errors")
+                }
+            } catch (_: JSONException) { null } catch (_: IOException) { null }
+            if (reasons != null && (0 until reasons.length()).any {
+                    reasons.optJSONObject(it)?.optString("reason") == "storageQuotaExceeded"
+                }) return UploadRejected("Spazio Google Drive esaurito")
+        }
+        val message = "Drive backup HTTP " + status
+        return if (status in 500..599) IOException(message) else UploadRejected(message)
     }
 
     /** Drive's opaque permission ID provides an account guard without email access. */
@@ -190,8 +219,8 @@ internal class DriveAudioBackupGateway(private val accessToken: String) {
             connection.setRequestProperty("X-Upload-Content-Length", file.sizeBytes.toString())
             connection.setFixedLengthStreamingMode(body.size)
             connection.outputStream.use { it.write(body) }
-            if (connection.responseCode !in 200..299)
-                throw IOException("Upload initiation HTTP " + connection.responseCode)
+            val status = connection.responseCode
+            if (status !in 200..299) throw httpFailure(connection, status)
             val session = connection.getHeaderField("Location")
                 ?: throw IOException("Drive did not return resumable session")
             approvedUrl(session)
@@ -200,11 +229,20 @@ internal class DriveAudioBackupGateway(private val accessToken: String) {
     }
 
     private fun parseAck(connection: HttpURLConnection, total: Long): Long {
-        val end = connection.getHeaderField("Range")
-            ?.substringAfterLast('-')?.toLongOrNull()
-        val confirmed = end?.plus(1) ?: 0L
-        AudioBackupPlanner.remainingBytes(total, confirmed)
-        return confirmed
+        val range = connection.getHeaderField("Range") ?: return 0L
+        val end = Regex("bytes=0-([0-9]+)").matchEntire(range)?.groupValues?.get(1)?.toLongOrNull()
+        if (end == null || end !in 0 until total)
+            throw UploadRejected("Drive ha confermato un intervallo non valido")
+        return end + 1
+    }
+
+    private fun acknowledgement(connection: HttpURLConnection, total: Long): ChunkAck {
+        val code = connection.responseCode
+        if (code == 308) return ChunkAck(parseAck(connection, total))
+        if (code != 200 && code != 201) throw httpFailure(connection, code)
+        val id = JSONObject(readSuccess(connection)).getString("id")
+        if (id.isBlank()) throw UploadRejected("ID file remoto non confermato")
+        return ChunkAck(total, id)
     }
 
     /** Probe after interrupted/uncertain upload before retrying the same chunk. */
@@ -215,11 +253,7 @@ internal class DriveAudioBackupGateway(private val accessToken: String) {
             connection.setRequestProperty("Content-Range", "bytes */" + total)
             connection.doOutput = true
             connection.setFixedLengthStreamingMode(0)
-            val code = connection.responseCode
-            if (code == 308) return ChunkAck(parseAck(connection, total))
-            if (code in 200..299)
-                return ChunkAck(total, JSONObject(readSuccess(connection)).getString("id"))
-            throw IOException("Upload session HTTP " + code)
+            return acknowledgement(connection, total)
         } finally { connection.disconnect() }
     }
 
@@ -229,7 +263,6 @@ internal class DriveAudioBackupGateway(private val accessToken: String) {
         require(chunk.isNotEmpty() && chunk.size <= 8 * 1024 * 1024)
         AudioBackupPlanner.remainingBytes(total, offset)
         require(offset + chunk.size <= total)
-        require(offset % (256 * 1024) == 0L)
         require(chunk.size % (256 * 1024) == 0 || offset + chunk.size == total)
         val connection = connect(session, "PUT")
         try {
@@ -239,12 +272,50 @@ internal class DriveAudioBackupGateway(private val accessToken: String) {
                 "bytes " + offset + "-" + (offset + chunk.size - 1) + "/" + total)
             connection.setFixedLengthStreamingMode(chunk.size)
             connection.outputStream.use { it.write(chunk) }
-            val code = connection.responseCode
-            if (code == 308) return ChunkAck(parseAck(connection, total))
-            if (code in 200..299)
-                return ChunkAck(total, JSONObject(readSuccess(connection)).getString("id"))
-            throw IOException("Audio upload HTTP " + code)
+            return acknowledgement(connection, total)
         } finally { connection.disconnect() }
+    }
+
+    suspend fun upload(
+        folderId: String, file: AudioBackupFile, readChunk: (offset: Long, count: Int) -> ByteArray,
+    ): String {
+        val total = file.sizeBytes
+        require(total > 0)
+        val session = startResumableUpload(folderId, file)
+        var offset = 0L
+        var stalled = 0
+        try {
+            while (offset < total) {
+                currentCoroutineContext().ensureActive()
+                val count = minOf(1024L * 1024, total - offset).toInt()
+                val chunk = readChunk(offset, count)
+                require(chunk.size == count)
+                currentCoroutineContext().ensureActive()
+                val ack = try {
+                    uploadChunk(session, chunk, offset, total)
+                } catch (error: UploadRejected) {
+                    throw error
+                } catch (error: IOException) {
+                    currentCoroutineContext().ensureActive()
+                    // A lost response can follow a successful write. Probe before retransmission.
+                    queryConfirmedOffset(session, total)
+                }
+                if (ack.confirmedOffset !in offset..(offset + count))
+                    throw UploadRejected("Drive ha confermato un offset non valido")
+                ack.remoteFileId?.let { return it }
+                if (ack.confirmedOffset == offset) {
+                    if (++stalled > 2) throw IOException("Drive non ha accettato i dati di upload")
+                } else {
+                    offset = ack.confirmedOffset
+                    stalled = 0
+                }
+            }
+            return queryConfirmedOffset(session, total).remoteFileId
+                ?: throw IOException("ID file remoto non confermato")
+        } catch (cancel: CancellationException) {
+            runCatching { cancelUpload(session) }
+            throw cancel
+        }
     }
 
     /** Cancel session only; no remote file deletion. */

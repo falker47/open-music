@@ -2,10 +2,14 @@ package app.openmusic.core
 
 import java.io.ByteArrayInputStream
 import java.security.MessageDigest
+import java.nio.file.Files
 import org.junit.Assert.*
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 
 class AudioBackupPlannerTest {
+    @get:Rule val destination = TemporaryFolder()
     private fun sha(data: ByteArray) = MessageDigest.getInstance("SHA-256")
         .digest(data).joinToString("") { "%02x".format(it) }
     private fun file(name: String, data: String, id: String? = null): AudioBackupFile {
@@ -46,6 +50,40 @@ class AudioBackupPlannerTest {
             listOf(file("one.mp3", "abc"), file("two.mp3", "abc")), remote)
         assertEquals(AudioBackupDisposition.UPLOAD, plan[0].disposition)
         assertEquals(AudioBackupDisposition.REUSE_LOCAL_CONTENT, plan[1].disposition)
+    }
+
+    @Test fun staleSizeOnOneDriveEntryDoesNotHideAnotherExactMatch() {
+        val good = file("earlier.mp3", "audio", "good-id")
+        val stale = good.copy(name = "later.mp3", sizeBytes = 40, remoteFileId = "stale-id")
+        val local = file("local.mp3", "audio")
+        for (records in listOf(manifest(good, stale), manifest(stale, good))) {
+            val plan = AudioBackupPlanner.planUpload(listOf(local), records).single()
+            assertEquals(AudioBackupDisposition.REMOTE_EXISTS, plan.disposition)
+            assertEquals("good-id", plan.existingRemoteFileId)
+        }
+        assertEquals(AudioBackupDisposition.UPLOAD,
+            AudioBackupPlanner.planUpload(listOf(local), manifest(stale)).single().disposition)
+    }
+
+    @Test fun restoringTwicePreservesDifferentBytesAndReusesTheRenamedCopy() {
+        val folder = destination.root
+        val song = file("song.mp3", "new")
+        val original = destination.newFile(song.name).apply { writeText("old") }
+        fun nextName(): String? {
+            val children = folder.listFiles()!!
+            return AudioBackupPlanner.restoreNameIfMissing(song,
+                children.map { it.name }.toSet(),
+                children.filter { it.isFile }.map { AudioFingerprintReader.inspect(it.inputStream()) }.toSet())
+        }
+        val name = nextName()!!
+        assertNotEquals(song.name, name)
+        val restored = Files.createFile(folder.toPath().resolve(name)).toFile()
+        restored.writeText("new")
+        assertNull(nextName())
+        assertEquals("old", original.readText())
+        assertTrue(restored.renameTo(folder.resolve("user-renamed.mp3")))
+        assertNull(nextName())
+        assertEquals("new", folder.resolve("user-renamed.mp3").readText())
     }
 
     @Test fun interruptedUploadResumesWithAnExactOffset() {
