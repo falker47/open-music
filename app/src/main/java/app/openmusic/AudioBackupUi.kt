@@ -65,12 +65,10 @@ internal fun rememberAudioBackupActions(
     val libraryHash = remember(libraryMusic) { librarySignature(libraryMusic) }
     // noBackupFilesDir does not migrate to a new device with Android Auto Backup:
     // an old SharedPreferences toggle alone is NOT consent to upload that device's audio.
-    val consentMarker = remember(context) {
-        java.io.File(context.noBackupFilesDir, "open-music-audio-upload-consent-v1")
-    }
-    var autoEnabled by remember {
-        mutableStateOf(preferences.getBoolean("uploadOnScan", false) && consentMarker.isFile)
-    }
+    val consent = remember(context) { AudioBackupConsent(context.noBackupFilesDir) }
+    var autoEnabled by remember(consent) { mutableStateOf(consent.account() != null) }
+    var consentGeneration by remember { mutableIntStateOf(0) }
+    var requestedConsentGeneration by remember { mutableIntStateOf(0) }
     var wasCloudLinked by remember { mutableStateOf(cloudLinked) }
     var offerDriveRestore by remember { mutableStateOf(false) }
     var enableAutoAfterUpload by remember { mutableStateOf(false) }
@@ -92,6 +90,7 @@ internal fun rememberAudioBackupActions(
     var authorizing by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf("") }
     var pendingJob by remember { mutableStateOf<Job?>(null) }
+    var runningAutomatic by remember { mutableStateOf(false) }
 
     val treePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree(),
@@ -137,11 +136,13 @@ internal fun rememberAudioBackupActions(
     val authorization = rememberAudioBackupDriveAccess(
         onAuthorized = { token ->
             val requested = action
+            val generation = requestedConsentGeneration
             action = BackupCommand.NONE
             authorizing = false
             if (requested != BackupCommand.NONE && !busy) {
                 pendingJob = scope.launch {
                     busy = true
+                    runningAutomatic = requested == BackupCommand.AUTO_UPLOAD
                     try {
                         val flow = AudioBackupWorkflow(context, DriveAudioBackupGateway(token))
                         when (requested) {
@@ -154,18 +155,17 @@ internal fun rememberAudioBackupActions(
                                     flow.backupSelected(selectedUris, allowMetered) {
                                         done, total -> progress = "Backup audio: " + done + "/" + total
                                     }
-                                else flow.backupLibrary(selectedUris, allowMetered) {
+                                else flow.backupLibrary(selectedUris, allowMetered, runningAutomatic) {
                                     done, total -> progress = "Backup libreria: " + done + "/" + total
                                 }
                                 if (requested != BackupCommand.UPLOAD) {
-                                    if (requested == BackupCommand.UPLOAD_LIBRARY) {
-                                        if (enableAutoAfterUpload) {
-                                            runCatching { consentMarker.writeText("enabled") }
-                                        } else consentMarker.delete()
-                                        autoEnabled = enableAutoAfterUpload && consentMarker.isFile
+                                    if (requested == BackupCommand.UPLOAD_LIBRARY &&
+                                        generation == consentGeneration) {
+                                        if (enableAutoAfterUpload) consent.grant(summary.account)
+                                        else consent.revoke()
+                                        autoEnabled = consent.account() != null
                                     }
                                     preferences.edit()
-                                        .putBoolean("uploadOnScan", autoEnabled)
                                         .putString("lastSuccessfulLibraryHash", savedLibraryHash)
                                         .apply()
                                 }
@@ -209,11 +209,21 @@ internal fun rememberAudioBackupActions(
                     } catch (cancel: CancellationException) {
                         latestMessage("Trasferimento interrotto: i file già caricati restano su Drive")
                         throw cancel
+                    } catch (error: BackupAccountMismatch) {
+                        consentGeneration++
+                        try {
+                            consent.revoke()
+                            autoEnabled = false
+                            latestMessage(error.message.orEmpty())
+                        } catch (revokeError: java.io.IOException) {
+                            latestMessage(error.message + ". " + revokeError.message)
+                        }
                     } catch (error: Exception) {
                         latestMessage("Backup audio: " +
                             (error.localizedMessage ?: "operazione non riuscita"))
                     } finally {
                         busy = false
+                        runningAutomatic = false
                         pendingJob = null
                     }
                 }
@@ -231,6 +241,7 @@ internal fun rememberAudioBackupActions(
         if (busy || authorizing) return
         authorizing = true
         action = command
+        requestedConsentGeneration = consentGeneration
         authorization()
     }
 
@@ -460,10 +471,16 @@ internal fun rememberAudioBackupActions(
             if (!busy && !authorizing) start(BackupCommand.LIST_REMOTE)
         },
         onDisableAutoBackup = {
-            autoEnabled = false
-            consentMarker.delete()
-            preferences.edit().putBoolean("uploadOnScan", false).apply()
-            latestMessage("Caricamento automatico dei nuovi brani disattivato")
+            consentGeneration++
+            if (action == BackupCommand.AUTO_UPLOAD) action = BackupCommand.NONE
+            if (runningAutomatic) pendingJob?.cancel()
+            try {
+                consent.revoke()
+                autoEnabled = false
+                latestMessage("Caricamento automatico dei nuovi brani disattivato")
+            } catch (error: java.io.IOException) {
+                latestMessage(error.message.orEmpty())
+            }
         },
         autoBackupEnabled = autoEnabled,
         busy = busy || authorizing,

@@ -102,6 +102,7 @@ class PlaybackService : MediaSessionService() {
         // The controller interaction trace separates command dispatch from
         // subsequent player buffering and playback transitions.
         val qaCallback = object : MediaSession.Callback {
+            @androidx.annotation.OptIn(UnstableApi::class)
             override fun onConnectAsync(
                 session: MediaSession,
                 controller: MediaSession.ControllerInfo,

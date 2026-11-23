@@ -10,7 +10,9 @@ data class AudioBackupFile(
     val sizeBytes: Long,
     val mimeType: String,
     val remoteFileId: String? = null,
-)
+) {
+    val fingerprint: AudioFingerprint get() = AudioFingerprint(sha256, sizeBytes)
+}
 
 data class AudioBackupManifest(
     val version: Int,
@@ -67,17 +69,17 @@ object AudioBackupPlanner {
         remote: AudioBackupManifest,
     ): List<AudioBackupDecision> {
         requireValid(remote, remote.folderId, remote.accountMarker)
-        val byHash = remote.files.associateBy { it.sha256 }
+        val byContent = remote.files.associateBy { it.fingerprint }
         val names = remote.files.map { it.name }.toHashSet()
-        val newHashes = HashSet<String>()
+        val newContent = HashSet<AudioFingerprint>()
         return local.map { file ->
             checkFile(file)
-            val existing = byHash[file.sha256]
+            val existing = byContent[file.fingerprint]
             when {
-                existing != null && existing.sizeBytes == file.sizeBytes ->
+                existing != null ->
                     AudioBackupDecision(file, AudioBackupDisposition.REMOTE_EXISTS,
                         existing.name, existing.remoteFileId)
-                !newHashes.add(file.sha256) ->
+                !newContent.add(file.fingerprint) ->
                     AudioBackupDecision(file, AudioBackupDisposition.REUSE_LOCAL_CONTENT,
                         file.name)
                 file.name in names -> {
@@ -92,6 +94,14 @@ object AudioBackupPlanner {
                 }
             }
         }
+    }
+
+    fun restoreNameIfMissing(
+        file: AudioBackupFile,
+        existingNames: Set<String>,
+        existingContent: Set<AudioFingerprint>,
+    ): String? {
+        return if (file.fingerprint in existingContent) null else safeRestoreName(file, existingNames)
     }
 
     /**
