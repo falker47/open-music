@@ -2,12 +2,12 @@
 
 **Your music. Your playlists. Your cloud.**
 
-Android-first, local-first music player with portable playlists independent of file paths. This is an early QA milestone, **not** a released app.
+Android-first, local-first music player with portable playlists independent of file paths. Experimental Android QA builds are available for testing.
 
 ## What works in the first Android QA build
 
 - Browse and search two complementary local categories, **Musica** and **Altri audio**, with persistent, reversible manual classification. All audio remains in the SHA-256 matching inventory.
-- Play locally accessible tracks with Media3 ExoPlayer (play/pause/next/previous/seek); a MediaSessionService now owns playback so it can continue with the screen locked or another app in front (pending real-device QA).
+- Play locally accessible tracks with Media3 ExoPlayer (play/pause/next/previous/seek). A MediaSessionService keeps playback running when another app is in front. See the device QA notes below for lock-screen controls.
 - Create multiple local playlists, add/remove entries and preserve order and repetitions.
 - Export/import portable JSON playlist v1 using the Android system document picker.
   - The picker may show Google Drive or pCloud if they expose a compatible DocumentsProvider. **This is manual export/import, not automatic cloud sync.**
@@ -15,10 +15,12 @@ Android-first, local-first music player with portable playlists independent of f
 - Preserve missing items instead of deleting them; never automatically link a different hash.
 - Save local working playlists in private app storage with atomic writes; local playback requires no login.
 - **Opt-in manual Google Drive playlist sync** is now implemented, subject to OAuth setup and real-device QA; see [Cloud setup](docs/GOOGLE_DRIVE_SYNC.md).
+- **Audio-file backup and restore:** From the Drive menu, choose individual files or back up the indexed **Musica** category to a visible Drive folder. Audio backup requests its own permission. Restore one file or choose a destination folder for a batch. The app verifies file length and SHA-256 on restore. [Audio backup and device QA](docs/AUDIO_BACKUP_AND_LYRICS_GATES.md)
+- **Upload after a library scan:** Off by default. When confirming a library backup, you can opt in on this device. After the first library backup succeeds, a changed library can trigger another upload while the app is open, Drive is linked and the connection is unmetered. You can turn this off in the Drive menu.
 
 ## Current limitations
 
-- No cloud audio streaming, background/automatic synchronization, pCloud adapter or Windows client yet. OAuth + manual Google Drive metadata sync are coded but not yet authenticated on a device.
+- Cloud audio streaming, unattended background sync, the pCloud adapter and the Windows client remain future work. Manual playlist sync and audio backup are separate flows. Both still need authenticated Android QA, including restore on another device.
 - Device QA (26 October 2026) confirmed background playback and notification-shade play/pause/previous/next. Lock-screen card visibility and slight perceived notification-control latency remain **unresolved**; this follow-up build adds [targeted QA diagnostics](docs/ANDROID_MEDIA_QA.md) and event-driven UI synchronization, not an unverified platform workaround. Reboot/process-death resumption and Android Auto browsing are not implemented.
 - Only audio present in MediaStore can be scanned; arbitrary downloaded document locations may be omitted.
 - An initial relink can read the entire local library; verified hashes are reused across scans/restarts where the provider exposes reliable version/generation. Hashing now uses **two bounded readers** instead of holding one global cache lock during file reads, and stops early only when every entry in every playlist is already EXACT. Unresolved/hashless playlists still require the full inventory; no final MISSING is inferred early. The diagnostics distinguish indexing, SHA and matching time. These changes need device timing validation; see [Android library QA](docs/ANDROID_LIBRARY_QA.md). Do not scan remote mounts.
@@ -50,7 +52,7 @@ Core tests and the ordinary debug APK always build in CI. The QA variant is
 also compiled and signature-checked with a disposable CI-only key when the
 persistent key is not yet provisioned; that disposable APK is **never
 published**. Once the single repository Actions secret `OPEN_MUSIC_QA_SIGNING`
-is configured, feature-branch push CI publishes `app-qa.apk` and a public
+is configured, CI on trusted `feat/**` pushes can publish `app-qa.apk` and a public
 `qa-signing-info.txt` with the actual certificate SHA-1 on a GitHub Release
 prerelease for that commit. This permits stable updates and a repeatable OAuth
 client fingerprint. Follow [the setup guide](docs/GOOGLE_DRIVE_SYNC.md) to
@@ -67,8 +69,7 @@ is **not** signed with a Play upload key and must never be uploaded to Play as-i
 See [release gates](docs/PLAY_STORE_READINESS.md) and
 [privacy policy draft](PRIVACY.md).
 
-The source repository stays public under the MIT license. PR #1 remains
-draft: public test APKs are not stable releases or Play Store publication.
+The initial Android player and the Drive backup changes are on `main`. Public QA APKs are experimental builds distributed through GitHub.
 
 Android Studio can import this Gradle project. In CI we use the pinned Gradle distribution (no unverified Gradle wrapper binary is committed):
 
